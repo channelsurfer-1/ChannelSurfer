@@ -26,3 +26,7 @@ build.sh
 
 # Original images (keep only scaled)
 images/original/
+
+# Generated data files
+data/epg_ripper_US2.xml.gz
+data/schedule.json
