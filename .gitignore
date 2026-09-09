@@ -40,6 +40,9 @@ data/blocklist.txt
 # Runtime logs (not tracked in Git, but still generated locally)
 data/security.log
 
+# Sports channels data - generated, not needed in Git
+data/sports_channels.json
+
 # Build logs only
 npm-debug.log*
 yarn-debug.log*
