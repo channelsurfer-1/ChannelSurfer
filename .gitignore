@@ -13,3 +13,16 @@ yarn-error.log*
 .vscode/
 *.swp
 Thumbs.db
+
+# Build outputs
+ChannelSurfer-darwin-x64/
+ChannelSurfer.dmg
+*.dmg
+*.app
+*.exe
+
+# Build scripts
+build.sh
+
+# Original images (keep only scaled)
+images/original/
