@@ -1,32 +1,47 @@
+# Dependencies
 node_modules/
+
+# Environment files
 .env
 .env.local
+
+# OS files
 .DS_Store
+Thumbs.db
+*.swp
+
+# IDE files
+.idea/
+.vscode/
+
+# Build outputs
 dist/
 build/
 coverage/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.idea/
-.vscode/
-*.swp
-Thumbs.db
-
-# Build outputs
-ChannelSurfer-darwin-x64/
-ChannelSurfer.dmg
-*.dmg
+ChannelSurfer-darwin-*/
+ChannelSurfer*.dmg
+dmg-*/
 *.app
 *.exe
+*.dmg
 
-# Build scripts
-build.sh
+# Build scripts - remove this line if you want to version control build.sh
+# build.sh
 
 # Original images (keep only scaled)
 images/original/
 
-# Generated data files
+# Generated data files (fetched/generated at runtime)
+data/epg_ripper_US2.xml
 data/epg_ripper_US2.xml.gz
 data/schedule.json
+data/blocklist.txt
+
+# Runtime logs (not tracked in Git, but still generated locally)
+data/security.log
+
+# Build logs only
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
