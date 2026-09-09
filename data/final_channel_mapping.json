@@ -1,0 +1,350 @@
+{
+  "302": {
+    "dlhd_name": "A&E USA",
+    "epg_id": "A.and.E.HD.East.us2"
+  },
+  "51": {
+    "dlhd_name": "ABC USA",
+    "epg_id": "ABC.National.Feed.us2"
+  },
+  "664": {
+    "dlhd_name": "ACC Network USA",
+    "epg_id": "ACC.Network.us2"
+  },
+  "923": {
+    "dlhd_name": "Altitude Sports",
+    "epg_id": "Altitude.Sports.us2"
+  },
+  "303": {
+    "dlhd_name": "AMC USA",
+    "epg_id": "AMC.HD.us2"
+  },
+  "306": {
+    "dlhd_name": "BET USA",
+    "epg_id": "BET.HD.us2"
+  },
+  "397": {
+    "dlhd_name": "BIG TEN Network (BTN USA)",
+    "epg_id": "Big.Ten.Network.HD.us2"
+  },
+  "307": {
+    "dlhd_name": "Bravo USA",
+    "epg_id": "Bravo.HD.us2"
+  },
+  "750": {
+    "dlhd_name": "C SPAN 1",
+    "epg_id": "CSPAN.us2"
+  },
+  "308": {
+    "dlhd_name": "CBS Sports Network (CBSSN)",
+    "epg_id": "CBS.Sports.Network.HD.us2"
+  },
+  "52": {
+    "dlhd_name": "CBS USA",
+    "epg_id": "CBS.West.us2"
+  },
+  "776": {
+    "dlhd_name": "Chicago Sports Network",
+    "epg_id": "CHSN.Chicago.Sports.Network.us2"
+  },
+  "374": {
+    "dlhd_name": "Cinemax USA",
+    "epg_id": "Cinemax.HD.us2"
+  },
+  "647": {
+    "dlhd_name": "CMT USA",
+    "epg_id": "CMT.HD.us2"
+  },
+  "309": {
+    "dlhd_name": "CNBC USA",
+    "epg_id": "CNBC.HD.us2"
+  },
+  "345": {
+    "dlhd_name": "CNN USA",
+    "epg_id": "CNN.HD.us2"
+  },
+  "310": {
+    "dlhd_name": "Comedy Central",
+    "epg_id": "Comedy.Central.HD.us2"
+  },
+  "748": {
+    "dlhd_name": "COZI TV USA",
+    "epg_id": "COZI.TV.us2"
+  },
+  "300": {
+    "dlhd_name": "CW USA",
+    "epg_id": "CW.us2"
+  },
+  "315": {
+    "dlhd_name": "E! Entertainment Television",
+    "epg_id": "E!.Entertainment.Television.HD.us2"
+  },
+  "44": {
+    "dlhd_name": "ESPN USA",
+    "epg_id": "ESPN.HD.us2"
+  },
+  "45": {
+    "dlhd_name": "ESPN2 USA",
+    "epg_id": "ESPN2.HD.us2"
+  },
+  "288": {
+    "dlhd_name": "ESPNews",
+    "epg_id": "ESPNEWS.HD.us2"
+  },
+  "316": {
+    "dlhd_name": "ESPNU USA",
+    "epg_id": "ESPNU.HD.us2"
+  },
+  "39": {
+    "dlhd_name": "Fox Sports 1 USA",
+    "epg_id": "FS1.Fox.Sports.1.HD.us2"
+  },
+  "758": {
+    "dlhd_name": "Fox Sports 2 USA",
+    "epg_id": "FS2.Fox.Sports.2.HD.us2"
+  },
+  "54": {
+    "dlhd_name": "FOX USA",
+    "epg_id": "Fox.News.Channel.HD.us2"
+  },
+  "301": {
+    "dlhd_name": "Freeform",
+    "epg_id": "Freeform.HD.us2"
+  },
+  "381": {
+    "dlhd_name": "FX Movie Channel",
+    "epg_id": "FX.Movie.Channel.HD.us2"
+  },
+  "317": {
+    "dlhd_name": "FX USA",
+    "epg_id": "FX.HD.us2"
+  },
+  "298": {
+    "dlhd_name": "FXX USA",
+    "epg_id": "FXX.HD.us2"
+  },
+  "318": {
+    "dlhd_name": "GOLF Channel USA",
+    "epg_id": "Golf.Channel.HD.us2"
+  },
+  "690": {
+    "dlhd_name": "HBO Comedy USA",
+    "epg_id": "HBO.Comedy.HD.us2"
+  },
+  "321": {
+    "dlhd_name": "HBO USA",
+    "epg_id": "HBO.East.us2"
+  },
+  "694": {
+    "dlhd_name": "HBO Zone USA",
+    "epg_id": "HBO.Zone.HD.us2"
+  },
+  "689": {
+    "dlhd_name": "HBO2 USA",
+    "epg_id": "HBO2.HD.us2"
+  },
+  "382": {
+    "dlhd_name": "HGTV",
+    "epg_id": "Home.and.Garden.Television.HD.us2"
+  },
+  "322": {
+    "dlhd_name": "History USA",
+    "epg_id": "History.HD.us2"
+  },
+  "656": {
+    "dlhd_name": "IFC TV USA",
+    "epg_id": "IFC.HD.us2"
+  },
+  "325": {
+    "dlhd_name": "ION USA",
+    "epg_id": "ION.Television.HD.us2"
+  },
+  "278": {
+    "dlhd_name": "Law & Crime Network",
+    "epg_id": "Law.and.Crime.us2"
+  },
+  "829": {
+    "dlhd_name": "MASN USA",
+    "epg_id": "MASN.-.Mid.Atlantic.Sports.Network.us2"
+  },
+  "662": {
+    "dlhd_name": "METV USA",
+    "epg_id": "Me.TV.Network.us2"
+  },
+  "399": {
+    "dlhd_name": "MLB Network USA",
+    "epg_id": "MLB.Network.HD.us2"
+  },
+  "765": {
+    "dlhd_name": "MSG USA",
+    "epg_id": "MSG.National.us2"
+  },
+  "745": {
+    "dlhd_name": "Nat Geo Wild USA",
+    "epg_id": "National.Geographic.Wild.HD.us2"
+  },
+  "404": {
+    "dlhd_name": "NBA TV USA",
+    "epg_id": "NBA.TV.HD.us2"
+  },
+  "753": {
+    "dlhd_name": "NBC Sports Bay Area",
+    "epg_id": "NBC.Sports.Bay.Area.HD.us2"
+  },
+  "754": {
+    "dlhd_name": "NBC Sports Boston",
+    "epg_id": "NBC.Sports.Boston.HD.us2"
+  },
+  "755": {
+    "dlhd_name": "NBC Sports California",
+    "epg_id": "NBC.Sports.California.Outer.Market.us2"
+  },
+  "777": {
+    "dlhd_name": "NBC Sports Philadelphia",
+    "epg_id": "NBC.Sports.Philadelphia.HD.us2"
+  },
+  "53": {
+    "dlhd_name": "NBC USA",
+    "epg_id": "NBC.East.Stream.us2"
+  },
+  "762": {
+    "dlhd_name": "NESN USA",
+    "epg_id": "NESN+.New.England.Sports.Network.Plus.us2"
+  },
+  "405": {
+    "dlhd_name": "NFL Network",
+    "epg_id": "NFL.Network.HD.us2"
+  },
+  "667": {
+    "dlhd_name": "NFL RedZone",
+    "epg_id": "NFL.RedZone.HD.us2"
+  },
+  "663": {
+    "dlhd_name": "NHL Network USA",
+    "epg_id": "NHL.Network.HD.us2"
+  },
+  "330": {
+    "dlhd_name": "NICK",
+    "epg_id": "Nickelodeon.HD.us2"
+  },
+  "334": {
+    "dlhd_name": "Paramount Network",
+    "epg_id": "Paramount.Network.HD.us2"
+  },
+  "210": {
+    "dlhd_name": "PBS USA",
+    "epg_id": "PBS.Stream.us2"
+  },
+  "653": {
+    "dlhd_name": "POP TV USA",
+    "epg_id": "POP.HD.us2"
+  },
+  "385": {
+    "dlhd_name": "SEC Network USA",
+    "epg_id": "SEC.Network.HD.us2"
+  },
+  "792": {
+    "dlhd_name": "Showtime 2 USA",
+    "epg_id": "Showtime.2.HD.us2"
+  },
+  "794": {
+    "dlhd_name": "Showtime Extreme USA",
+    "epg_id": "Showtime.Extreme.HD.us2"
+  },
+  "796": {
+    "dlhd_name": "Showtime Next USA",
+    "epg_id": "Showtime.Next.HD.us2"
+  },
+  "793": {
+    "dlhd_name": "Showtime Showcase USA",
+    "epg_id": "Showtime.Showcase.HD.us2"
+  },
+  "333": {
+    "dlhd_name": "Showtime USA",
+    "epg_id": "Paramount+.with.Showtime.HD.us2"
+  },
+  "603": {
+    "dlhd_name": "Smithsonian Channel",
+    "epg_id": "Smithsonian.HD.Network.us2"
+  },
+  "982": {
+    "dlhd_name": "Spectrum SportsNet USA",
+    "epg_id": "Spectrum.SportsNet.LA.Dodgers.HD.us2"
+  },
+  "922": {
+    "dlhd_name": "SportsNet Pittsburgh",
+    "epg_id": "SportsNet.Pittsburgh.HD.us2"
+  },
+  "335": {
+    "dlhd_name": "Starz",
+    "epg_id": "Starz.HD.us2"
+  },
+  "970": {
+    "dlhd_name": "Starz Cinema",
+    "epg_id": "Starz.Cinema.HD.us2"
+  },
+  "971": {
+    "dlhd_name": "Starz Comedy",
+    "epg_id": "Starz.Comedy.HD.us2"
+  },
+  "972": {
+    "dlhd_name": "Starz Edge",
+    "epg_id": "Starz.Edge.HD.us2"
+  },
+  "975": {
+    "dlhd_name": "Starz Encore",
+    "epg_id": "Starz.Encore.HD.us2"
+  },
+  "976": {
+    "dlhd_name": "Starz Encore Action",
+    "epg_id": "Starz.Encore.Action.HD.us2"
+  },
+  "978": {
+    "dlhd_name": "Starz Encore Classic",
+    "epg_id": "Starz.Encore.Classic.us2"
+  },
+  "980": {
+    "dlhd_name": "Starz Encore Suspense",
+    "epg_id": "Starz.Encore.Suspense.us2"
+  },
+  "658": {
+    "dlhd_name": "Sundance TV",
+    "epg_id": "SundanceTV.HD.us2"
+  },
+  "373": {
+    "dlhd_name": "SYFY USA",
+    "epg_id": "Syfy.HD.us2"
+  },
+  "336": {
+    "dlhd_name": "TBS USA",
+    "epg_id": "TBS.HD.us2"
+  },
+  "394": {
+    "dlhd_name": "The Weather Channel",
+    "epg_id": "The.Weather.Channel.HD.us2"
+  },
+  "338": {
+    "dlhd_name": "TNT USA",
+    "epg_id": "TNT.HD.us2"
+  },
+  "341": {
+    "dlhd_name": "TruTV USA",
+    "epg_id": "truTV.HD.us2"
+  },
+  "342": {
+    "dlhd_name": "TVLAND",
+    "epg_id": "TV.Land.HD.us2"
+  },
+  "343": {
+    "dlhd_name": "USA Network",
+    "epg_id": "USA.Network.HD.us2"
+  },
+  "655": {
+    "dlhd_name": "WETV USA",
+    "epg_id": "WE.tv.HD.us2"
+  },
+  "763": {
+    "dlhd_name": "YES Network USA",
+    "epg_id": "Yes.Network.us2"
+  }
+}

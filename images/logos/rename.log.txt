@@ -1,0 +1,245 @@
+./rename.sh
+[2026-09-06 15:58:35] Fetching channel page...
+[2026-09-06 15:58:36] Extracting channel names and logo URLs from JSON...
+  Downloading: A&E → AE.png
+  Downloading: ABC → ABC.svg
+  Failed: ABC (HTTP Error 403: Forbidden)
+  Downloading: ABC News Live → ABC_News_Live.png
+  Downloading: ACC Network → ACC_Network.png
+  Downloading: AccuWeather → AccuWeather.png
+  Downloading: Altitude Sports and Entertainment Network → Altitude_Sports_and_Entertainment_Network.png
+  Downloading: AMC → AMC.png
+  Downloading: American Heroes Channel → American_Heroes_Channel.png
+  Downloading: Animal Planet → Animal_Planet.png
+  Downloading: ASPiRE → ASPiRE.png
+  Downloading: AT&T SportsNet Pittsburgh → ATT_SportsNet_Pittsburgh.png
+  Downloading: AT&T SportsNet Rocky Mountain → ATT_SportsNet_Rocky_Mountain.png
+  Downloading: AT&T SportsNet Southwest → ATT_SportsNet_Southwest.png
+  Downloading: AXS TV → AXS_TV.png
+  Downloading: Baby Tv → Baby_Tv.png
+  Downloading: Bally Sports Arizona - BSAZ → Bally_Sports_Arizona_-_BSAZ.png
+  Downloading: Bally Sports Detroit - B → Bally_Sports_Detroit_-_B.png
+  Downloading: Bally Sports Florida → Bally_Sports_Florida.png
+  Downloading: Bally Sports Great Lakes → Bally_Sports_Great_Lakes.png
+  Downloading: Bally Sports Midwest - Illinois → Bally_Sports_Midwest_-_Illinois.png
+  Downloading: Bally Sports North → Bally_Sports_North.png
+  Downloading: Bally Sports Ohio 1 (Cleveland feed) → Bally_Sports_Ohio_1_Cleveland_feed.png
+  Downloading: Bally Sports Ohio 2 (Cincinnati feed) → Bally_Sports_Ohio_2_Cincinnati_feed.png
+  Downloading: Bally Sports Oklahoma → Bally_Sports_Oklahoma.png
+  Downloading: Bally Sports San Diego → Bally_Sports_San_Diego.png
+  Downloading: Bally Sports SoCal → Bally_Sports_SoCal.png
+  Downloading: Bally Sports South - Main Feed → Bally_Sports_South_-_Main_Feed.png
+  Downloading: Bally Sports Southeast → Bally_Sports_Southeast.png
+  Downloading: Bally Sports Southwest (Main Feed) → Bally_Sports_Southwest_Main_Feed.png
+  Downloading: Bally Sports Sun → Bally_Sports_Sun.png
+  Downloading: Bally Sports West → Bally_Sports_West.png
+  Downloading: Bally Sports Wisconsin → Bally_Sports_Wisconsin.png
+  Downloading: BBC America → BBC_America.png
+  Downloading: BBC World News → BBC_World_News.png
+  Downloading: beIN Sports → beIN_Sports.png
+  Downloading: beIN Sports En Español → beIN_Sports_En_Español.png
+  Downloading: BET → BET.png
+  Downloading: BET Her → BET_Her.png
+  Downloading: BET Jams → BET_Jams.png
+  Downloading: BET Soul → BET_Soul.png
+  Downloading: Big Ten Network → Big_Ten_Network.png
+  Downloading: Bloomberg Business Television → Bloomberg_Business_Television.png
+  Downloading: Boomerang → Boomerang.png
+  Downloading: Bravo → Bravo.png
+  Downloading: Cable News Network → Cable_News_Network.png
+  Downloading: Cartoon Network → Cartoon_Network.png
+  Downloading: CBS → CBS.svg
+  Failed: CBS (HTTP Error 403: Forbidden)
+  Downloading: CBS News Streaming → CBS_News_Streaming.png
+  Downloading: CBS Sports Network → CBS_Sports_Network.png
+  Downloading: Cinemax → Cinemax.png
+  Downloading: Cleo TV → Cleo_TV.png
+  Downloading: CMT → CMT.png
+  Downloading: CNBC → CNBC.png
+  Downloading: CNBC World → CNBC_World.png
+  Downloading: CNN en Español → CNN_en_Español.png
+  Downloading: CNN International → CNN_International.png
+  Downloading: Comedy Central → Comedy_Central.png
+  Downloading: Comet → Comet.png
+  Downloading: Cooking Channel → Cooking_Channel.png
+  Downloading: COZI TV → COZI_TV.png
+  Downloading: CSPAN → CSPAN.png
+  Downloading: CSPAN2 → CSPAN2.png
+  Downloading: Destination America → Destination_America.png
+  Downloading: Discovery Channel → Discovery_Channel.png
+  Downloading: Discovery en Español → Discovery_en_Español.png
+  Downloading: Discovery Familia → Discovery_Familia.png
+  Downloading: Discovery Family Channel → Discovery_Family_Channel.png
+  Downloading: Discovery Life Channel → Discovery_Life_Channel.png
+  Downloading: Disney Channel → Disney_Channel.png
+  Downloading: Disney Junior → Disney_Junior.png
+  Downloading: Disney XD → Disney_XD.png
+  Downloading: Do-It-Yourself Network → Do-It-Yourself_Network.png
+  Downloading: E! Entertainment Television → E_Entertainment_Television.png
+  Downloading: El Gourmet → El_Gourmet.png
+  Downloading: Epix → Epix.png
+  Downloading: EPIX 2 → EPIX_2.png
+  Downloading: Epix Drive-in → Epix_Drive-in.png
+  Downloading: Epix Hits → Epix_Hits.png
+  Downloading: ESPN → ESPN.png
+  Downloading: ESPN Deportes → ESPN_Deportes.png
+  Downloading: ESPN2 → ESPN2.png
+  Downloading: ESPNEWS → ESPNEWS.png
+  Downloading: ESPNU → ESPNU.png
+  Downloading: Estrella TV → Estrella_TV.png
+  Downloading: Food Network → Food_Network.png
+  Downloading: FOX → FOX.svg
+  Failed: FOX (HTTP Error 403: Forbidden)
+  Downloading: Fox Business → Fox_Business.png
+  Downloading: Fox Deportes → Fox_Deportes.png
+  Downloading: Fox Life → Fox_Life.png
+  Downloading: Fox News Channel → Fox_News_Channel.png
+  Downloading: Fox Sports 1 → Fox_Sports_1.png
+  Downloading: Fox Sports 2 → Fox_Sports_2.png
+  Downloading: Freeform → Freeform.png
+  Downloading: Fuse → Fuse.png
+  Downloading: FX → FX.png
+  Downloading: FXM → FXM.png
+  Downloading: FXX → FXX.png
+  Downloading: FYI → FYI.png
+  Downloading: GAC FAMILY → GAC_FAMILY.png
+  Downloading: Galavision Cable Network → Galavision_Cable_Network.png
+  Downloading: Game Show Network → Game_Show_Network.png
+  Downloading: getTV → getTV.png
+  Downloading: Golf Channel → Golf_Channel.png
+  Downloading: GOLTV (English) → GOLTV_English.png
+  Downloading: GOLTV International → GOLTV_International.png
+  Downloading: Hallmark Channel → Hallmark_Channel.png
+  Downloading: Hallmark Drama → Hallmark_Drama.png
+  Downloading: Hallmark Movies & Mysteries → Hallmark_Movies__Mysteries.png
+  Downloading: HBO → HBO.png
+  Downloading: HBO Comedy → HBO_Comedy.png
+  Downloading: HBO Family → HBO_Family.png
+  Downloading: HBO2 → HBO2.png
+  Downloading: History → History.png
+  Downloading: History Channel En Español → History_Channel_En_Español.png
+  Downloading: HLN → HLN.png
+  Downloading: Home & Garden Television → Home__Garden_Television.png
+  Downloading: IFC → IFC.png
+  Downloading: INSP → INSP.png
+  Downloading: Investigation Discovery → Investigation_Discovery.png
+  Downloading: ION → ION.svg
+  Failed: ION (HTTP Error 403: Forbidden)
+  Downloading: Law & Crime Stream → Law__Crime_Stream.png
+  Downloading: Lifetime → Lifetime.png
+  Downloading: LMN → LMN.png
+  Downloading: Local Now → Local_Now.png
+  Downloading: Logo → Logo.png
+  Downloading: Longhorn Network → Longhorn_Network.png
+  Downloading: LX → LX.png
+  Downloading: Marquee Sports Network → Marquee_Sports_Network.png
+  Downloading: MASN - Mid Atlantic Sports Network → MASN_-_Mid_Atlantic_Sports_Network.png
+  Downloading: MavTV → MavTV.png
+  Downloading: MLB Network → MLB_Network.png
+  Downloading: MLB Network Strike Zone → MLB_Network_Strike_Zone.png
+  Downloading: MOTORTREND → MOTORTREND.png
+  Downloading: MSG (Alt. feed) - MSG2 OVERFLOW → MSG_Alt_feed_-_MSG2_OVERFLOW.png
+  Downloading: MSG National → MSG_National.png
+  Downloading: MSG Plus Zone 1 → MSG_Plus_Zone_1.png
+  Downloading: MSNBC → MSNBC.png
+  Downloading: MTV - Music Television → MTV_-_Music_Television.png
+  Downloading: MTV Classic → MTV_Classic.png
+  Downloading: mtv-U → mtv-U.png
+  Downloading: MTV2: Music Television → MTV2_Music_Television.png
+  Downloading: MTVLIVE → MTVLIVE.png
+  Downloading: Nat Geo Mundo → Nat_Geo_Mundo.png
+  Downloading: National Geographic USA → National_Geographic_USA.png
+  Downloading: National Geographic Wild → National_Geographic_Wild.png
+  Downloading: NBA TV → NBA_TV.png
+  Downloading: NBC → NBC.svg
+  Failed: NBC (HTTP Error 403: Forbidden)
+  Downloading: NBC Sports Bay Area Plus → NBC_Sports_Bay_Area_Plus.png
+  Downloading: NBC Sports California → NBC_Sports_California.png
+  Downloading: NBC Sports Chicago → NBC_Sports_Chicago.png
+  Downloading: NBC Sports Philadelphia → NBC_Sports_Philadelphia.png
+  Downloading: New England Cable News → New_England_Cable_News.png
+  Downloading: New England Sports Network → New_England_Sports_Network.png
+  Downloading: New England Sports Network Plus → New_England_Sports_Network_Plus.png
+  Downloading: Newsmax TV → Newsmax_TV.png
+  Downloading: NewsNation → NewsNation.png
+  Downloading: NFL Network → NFL_Network.png
+  Downloading: NFL RedZone → NFL_RedZone.png
+  Downloading: NHL Network → NHL_Network.png
+  Downloading: Nick Jr → Nick_Jr.png
+  Downloading: Nick Music → Nick_Music.png
+  Downloading: Nickelodeon → Nickelodeon.png
+  Downloading: Olympic Channel → Olympic_Channel.png
+  Downloading: One America News Network → One_America_News_Network.png
+  Downloading: Oprah Winfrey Network → Oprah_Winfrey_Network.png
+  Downloading: Outdoor Channel → Outdoor_Channel.png
+  Downloading: Outside Television → Outside_Television.png
+  Downloading: Ovation → Ovation.png
+  Downloading: Oxygen → Oxygen.png
+  Downloading: Pac-12 Arizona → Pac-12_Arizona.png
+  Downloading: Pac-12 Bay Area → Pac-12_Bay_Area.png
+  Downloading: Pac-12 Los Angeles → Pac-12_Los_Angeles.png
+  Downloading: Pac-12 Mountain → Pac-12_Mountain.png
+  Downloading: Pac-12 Network → Pac-12_Network.png
+  Downloading: Pac-12 Oregon → Pac-12_Oregon.png
+  Downloading: Pac-12 Washington → Pac-12_Washington.png
+  Downloading: Paramount Network → Paramount_Network.png
+  Downloading: PeopleTV → PeopleTV.png
+  Downloading: POP → POP.png
+  Downloading: Public Broadcasting Service → Public_Broadcasting_Service.png
+  Downloading: QVC → QVC.png
+  Downloading: QVC2 → QVC2.png
+  Downloading: Revolt → Revolt.png
+  Downloading: ROOT Sports Northwest → ROOT_Sports_Northwest.png
+  Downloading: Science → Science.png
+  Downloading: SEC Network → SEC_Network.png
+  Downloading: SHO 2 → SHO_2.png
+  Downloading: SHO x BET → SHO_x_BET.png
+  Downloading: Showtime → Showtime.png
+  Downloading: Showtime Extreme → Showtime_Extreme.png
+  Downloading: Showtime Familyzone → Showtime_Familyzone.png
+  Downloading: Showtime Next → Showtime_Next.png
+  Downloading: Showtime Showcase → Showtime_Showcase.png
+  Downloading: Showtime Women → Showtime_Women.png
+  Downloading: Smithsonian → Smithsonian.png
+  Downloading: Sony Movie Channel → Sony_Movie_Channel.png
+  Downloading: Spectrum SportsNet → Spectrum_SportsNet.png
+  Downloading: Sportsnet NY → Sportsnet_NY.png
+  Downloading: Stadium → Stadium.png
+  Downloading: Starz → Starz.png
+  Downloading: SundanceTV → SundanceTV.png
+  Downloading: SYFY → SYFY.png
+  Downloading: Tastemade [Str] → Tastemade_Str.png
+  Downloading: TBS → TBS.png
+  Downloading: Teen Nick → Teen_Nick.png
+  Downloading: Tennis Channel → Tennis_Channel.png
+  Downloading: The CW → The_CW.svg
+  Failed: The CW (HTTP Error 403: Forbidden)
+  Downloading: The Fight Network → The_Fight_Network.png
+  Downloading: The Sportsman Channel → The_Sportsman_Channel.png
+  Downloading: The Travel Channel → The_Travel_Channel.png
+  Downloading: The Weather Channel → The_Weather_Channel.png
+  Downloading: TLC → TLC.png
+  Downloading: TNT → TNT.png
+  Downloading: truTV → truTV.png
+  Downloading: TUDN → TUDN.png
+  Downloading: Turner Classic Movies → Turner_Classic_Movies.png
+  Downloading: TV Games Network → TV_Games_Network.png
+  Downloading: TV Games Network 2 → TV_Games_Network_2.png
+  Downloading: TV Land → TV_Land.png
+  Downloading: UniMas → UniMas.png
+  Downloading: Universal Kids → Universal_Kids.png
+  Downloading: UNIVERSO → UNIVERSO.png
+  Downloading: Univision Network → Univision_Network.png
+  Downloading: UPtv → UPtv.png
+  Downloading: USA Network → USA_Network.png
+  Downloading: Vegas Sports & Information Network → Vegas_Sports__Information_Network.png
+  Failed: Vegas Sports & Information Network (HTTP Error 403: Forbidden)
+  Downloading: VH1 → VH1.png
+  Downloading: Vice → Vice.png
+  Downloading: WE tv → WE_tv.png
+  Downloading: Yes Network → Yes_Network.png
+  Downloading: Zona Futbol → Zona_Futbol.png
+
+Downloaded: 224
+Failed: 7
+Skipped (already exists): 0
