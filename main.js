@@ -136,6 +136,8 @@ function createWindow() {
     title: '📺 ChannelSurfer',
     width: 1200,
     height: 800,
+    show: false,  // Don't show until content is ready
+    backgroundColor: '#1a1a1a',  // Match your app's background color
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -222,6 +224,11 @@ function createWindow() {
 
   win.loadFile(targetPath).catch(err => {
     console.error('Failed to load HTML file:', err);
+  });
+
+  // Show window only when content is ready to display
+  win.once('ready-to-show', () => {
+    win.show();
   });
 }
 
