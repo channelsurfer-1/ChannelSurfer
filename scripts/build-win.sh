@@ -18,6 +18,18 @@ node src/fetchEpg.js
 # Generate schedule data
 node src/generateScheduleJson.js
 
+# Stage images/ for packaging, excluding local-only content
+echo "Staging images..."
+rm -rf .staging-images
+mkdir -p .staging-images
+rsync -a \
+  --exclude='.DS_Store' \
+  --exclude='original/' \
+  --exclude='*.log.txt' \
+  --exclude='rename*.sh' \
+  --exclude='process-minimal.js' \
+  images/ .staging-images/images/
+
 # Common ignore patterns
 IGNORE_PATTERNS=(
   "--ignore=^/ChannelSurfer\\.dmg$"
@@ -28,12 +40,13 @@ IGNORE_PATTERNS=(
   "--ignore=^/node_modules$"
   "--ignore=^/runtime$"
   "--ignore=^/dist$"
+  "--ignore=^/.staging-images$"
   "--ignore=^/data/epg_ripper_US2\\.xml$"
   "--ignore=^/data/epg_ripper_US2\\.xml\\.gz$"
   "--ignore=^/data/schedule\\.json$"
   "--ignore=^/data/security\\.log$"
   "--ignore=^/data/blocklist\\.txt$"
-  "--extra-resource=images"
+  "--extra-resource=.staging-images/images"
 )
 
 # Build x64 (standard Windows)
@@ -50,6 +63,9 @@ npx electron-packager . ChannelSurfer \
 echo "Creating distribution zip..."
 rm -f dist/ChannelSurfer-win32-x64.zip
 (cd dist && zip -r -X ChannelSurfer-win32-x64.zip ChannelSurfer-win32-x64)
+
+# Clean up staging
+rm -rf .staging-images
 
 echo "Build complete!"
 echo "Created:"

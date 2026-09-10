@@ -22,6 +22,18 @@ node src/fetchEpg.js
 # Generate schedule data
 node src/generateScheduleJson.js
 
+# Stage images/ for packaging, excluding local-only content
+echo "Staging images..."
+rm -rf .staging-images
+mkdir -p .staging-images
+rsync -a \
+  --exclude='.DS_Store' \
+  --exclude='original/' \
+  --exclude='*.log.txt' \
+  --exclude='rename*.sh' \
+  --exclude='process-minimal.js' \
+  images/ .staging-images/images/
+
 # Common ignore patterns
 IGNORE_PATTERNS=(
   "--ignore=^/ChannelSurfer\\.dmg$"
@@ -32,12 +44,13 @@ IGNORE_PATTERNS=(
   "--ignore=^/node_modules$"
   "--ignore=^/runtime$"
   "--ignore=^/dist$"
+  "--ignore=^/.staging-images$"
   "--ignore=^/data/epg_ripper_US2\\.xml$"
   "--ignore=^/data/epg_ripper_US2\\.xml\\.gz$"
   "--ignore=^/data/schedule\\.json$"
   "--ignore=^/data/security\\.log$"
   "--ignore=^/data/blocklist\\.txt$"
-  "--extra-resource=images"
+  "--extra-resource=.staging-images/images"
 )
 
 # Build x64 (Intel) Electron app
@@ -61,7 +74,7 @@ npx electron-packager . ChannelSurfer \
 # Apply icons to both builds
 for build in dist/ChannelSurfer-darwin-x64 dist/ChannelSurfer-darwin-universal; do
   echo "Applying icon to $build..."
-  cp images/icon.icns "$build/ChannelSurfer.app/Contents/Resources/icon.icns"
+  cp .staging-images/images/icon.icns "$build/ChannelSurfer.app/Contents/Resources/icon.icns"
   /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile icon.icns" "$build/ChannelSurfer.app/Contents/Info.plist"
   touch "$build/ChannelSurfer.app"
 done
@@ -82,6 +95,9 @@ cp -R dist/ChannelSurfer-darwin-universal/ChannelSurfer.app dist/dmg-universal/
 ln -s /Applications dist/dmg-universal/Applications
 hdiutil create -volname "ChannelSurfer Universal" -srcfolder dist/dmg-universal -ov -format UDZO dist/ChannelSurfer-universal.dmg
 rm -rf dist/dmg-universal
+
+# Clean up staging
+rm -rf .staging-images
 
 echo "Build complete!"
 echo "Created:"
