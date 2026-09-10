@@ -46,5 +46,12 @@ npx electron-packager . ChannelSurfer \
   --icon=images/icon.ico \
   "${IGNORE_PATTERNS[@]}"
 
+# Package the output as a zip for distribution
+echo "Creating distribution zip..."
+rm -f dist/ChannelSurfer-win32-x64.zip
+(cd dist && zip -r -X ChannelSurfer-win32-x64.zip ChannelSurfer-win32-x64)
+
 echo "Build complete!"
-echo "Created: dist/ChannelSurfer-win32-x64/ChannelSurfer.exe"
+echo "Created:"
+echo "  - dist/ChannelSurfer-win32-x64/ChannelSurfer.exe"
+echo "  - dist/ChannelSurfer-win32-x64.zip"
