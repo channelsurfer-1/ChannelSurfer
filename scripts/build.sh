@@ -1,5 +1,7 @@
 #!/bin/bash
 
+cd "$(dirname "$0")/.."
+
 # Create dist directory if it doesn't exist
 mkdir -p dist
 
@@ -25,7 +27,7 @@ IGNORE_PATTERNS=(
   "--ignore=^/ChannelSurfer\\.dmg$"
   "--ignore=^/ChannelSurfer-intel\\.dmg$"
   "--ignore=^/ChannelSurfer-universal\\.dmg$"
-  "--ignore=^/build\\.sh$"
+  "--ignore=^/scripts$"
   "--ignore=^/documentation$"
   "--ignore=^/node_modules$"
   "--ignore=^/runtime$"
