@@ -1,4 +1,8 @@
-const { app, BrowserWindow, session, ipcMain, protocol } = require('electron');
+const { app } = require('electron');
+
+app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
+
+const { BrowserWindow, session, ipcMain, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
 

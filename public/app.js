@@ -467,7 +467,6 @@ function populateScheduleList(listContainer, pane, paneIndex) {
     const stationText = document.createElement('span');
     stationText.className = 'pane-schedule-station-text';
     stationText.textContent = displayName;
-    stationText.title = displayName;
     stationSpan.appendChild(stationText);
     
     row.appendChild(stationSpan);
@@ -490,7 +489,6 @@ function populateScheduleList(listContainer, pane, paneIndex) {
       textarea.innerHTML = currentSlot.program;
       programTitle = textarea.value;
       programSpan.textContent = programTitle;
-      programSpan.title = programTitle;
       programSpan.classList.add('is-live');
 
       if (currentSlot.description) {
