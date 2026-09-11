@@ -26,7 +26,9 @@ const SAFE_DOMAINS = [
 ];
 
 function getSecurityLogPath() {
-  const dataDir = path.join(__dirname, 'data');
+  const dataDir = app.isPackaged
+    ? app.getPath('userData')
+    : path.join(__dirname, 'data');
   
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
