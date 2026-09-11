@@ -5,9 +5,8 @@
   "scripts": {
     "start": "electron .",
     "package": "sh scripts/build-mac.sh",
-    "package:intel": "sh scripts/build-intel.sh",
-    "package:universal": "sh scripts/build-universal.sh",
-    "package:win": "sh scripts/build-win.sh"    
+    "package:win": "sh scripts/build-win.sh",
+    "package:linux": "sh scripts/build-linux.sh"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",
