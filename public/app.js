@@ -685,7 +685,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       updateModeButtonIcons();
       renderView();
+      try {
+        const { ipcRenderer } = require('electron');
+        ipcRenderer.send('schedule-rendered');
+      } catch (_) {}
     } catch (err) {
+
       setTimeout(loadSchedule, 2000);
     }
   }

@@ -232,13 +232,23 @@ function createWindow() {
     console.error('Failed to load HTML file:', err);
   });
 
-  // Show window only when content is ready to display
-  win.once('ready-to-show', () => {
-    win.show();
-  });
+  // Window is shown by the 'schedule-rendered' IPC event after the first render.
+  // Safety fallback: show the window after 10 seconds if the renderer never signals.
+  setTimeout(() => {
+    if (win && !win.isVisible()) {
+      console.warn('Schedule render timed out; showing window anyway.');
+      win.show();
+    }
+  }, 10000);
 }
 
 ipcMain.handle('get-schedule-path', () => schedulePath);
+
+ipcMain.on('schedule-rendered', () => {
+  if (win && !win.isVisible()) {
+    win.show();
+  }
+});
 
 app.whenReady().then(async () => {
   resetSecurityLog();
