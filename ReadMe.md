@@ -2,6 +2,38 @@
 
 A desktop application for browsing and watching live TV streams with a rich, modern program guide.
 
+## Contents
+
+- [Screenshots](#screenshots)
+- [Features](#features)
+- [Installation](#installation)
+- [How It Works](#how-it-works)
+- [Program Guide Accuracy](#program-guide-accuracy)
+- [Build](#build)
+- [Contributing](#contributing)
+- [License](#license)
+- [Credits](#credits)
+- [Built With](#built-with)
+- [Disclaimer](#disclaimer)
+
+## Screenshots
+
+### Program Guide
+
+![](./documentation/Program-Guide.png)
+
+### Single View
+
+![](./documentation/Single-View-Mode.png)
+
+### Dual View
+
+![](./documentation/Dual-View-Mode.png)
+
+### Grid View
+
+![](./documentation/Grid-View-Mode.png)
+
 ## Features
 
 ### 📋 Program Guide
@@ -16,7 +48,7 @@ Browse current programming across all available stations.
 Watch multiple channels at once.
 
 - **Single View** — Watch one program
-- **Dual View** — Watch up to two programs concurrently
+- **Dual View** — Watch two programs concurrently
 - **Grid View** — Watch up to four programs concurrently
 - Individual panels expand to fullscreen when the player's fullscreen button is clicked
 
@@ -54,14 +86,6 @@ Designed for comfortable viewing in low-light environments.
    ```
    If the executable bit was lost during transfer, restore it with `chmod +x ChannelSurfer`.
 
-## Program Guide Accuracy
-
-The program guide relies on publicly available EPG data.
-
-It works well for national networks. Broadcast networks like CBS, ABC, NBC, and FOX may not always match the exact local feed used by the stream source.
-
-Treat the schedule as a helpful guide rather than an authoritative source.
-
 ## How It Works
 
 1. Launch the app
@@ -70,6 +94,14 @@ Treat the schedule as a helpful guide rather than an authoritative source.
 4. Click the program to fill that panel
 5. Switch from Single to Dual or Grid View to view more than one program at a time
 6. Closing a program returns the panel to the program guide
+
+## Program Guide Accuracy
+
+The program guide relies on publicly available EPG data.
+
+It works well for national networks. Broadcast networks like CBS, ABC, NBC, and FOX may not always match the exact local feed used by the stream source.
+
+Treat the schedule as a helpful guide rather than an authoritative source.
 
 ## Build
 
@@ -82,23 +114,9 @@ npm run package:linux   # Linux (.tar.gz)
 
 Output goes to `dist/`.
 
-## Screenshots
+## Contributing
 
-### Program Guide
-
-![](./documentation/Program-Guide.png)
-
-### Single View
-
-![](./documentation/Single-View-Mode.png)
-
-### Dual View
-
-![](./documentation/Dual-View-Mode.png)
-
-### Grid View
-
-![](./documentation/Grid-View-Mode.png)
+Bug reports and feature requests are welcome — please [open an issue](https://github.com/channelsurfer-1/ChannelSurfer/issues).
 
 ## License
 
@@ -108,10 +126,6 @@ GPL-3.0. See [LICENSE](LICENSE) for details.
 
 Built by DeepSeek 2 (Free Edition), under the direction of Joel Budgor.
 Inspired by [domainus/LiveTv-English](https://github.com/domainus/LiveTv-English).
-
-## Contributing
-
-Bug reports and feature requests are welcome — please [open an issue](https://github.com/channelsurfer-1/ChannelSurfer/issues)
 
 ## Built With
 
