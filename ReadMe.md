@@ -7,6 +7,7 @@ A desktop application for browsing and watching live TV streams with a rich, mod
 - [Screenshots](#screenshots)
 - [Features](#features)
 - [Installation](#installation)
+- [Releases](#releases)
 - [How It Works](#how-it-works)
 - [Program Guide Accuracy](#program-guide-accuracy)
 - [Build](#build)
@@ -85,6 +86,15 @@ Designed for comfortable viewing in low-light environments.
    ./ChannelSurfer
    ```
    If the executable bit was lost during transfer, restore it with `chmod +x ChannelSurfer`.
+
+## Releases
+
+Pre-built binaries for macOS, Windows, and Linux will be available on the
+[Releases page](https://github.com/channelsurfer-1/ChannelSurfer/releases) once the
+first release is published.
+
+Each release will include platform-specific download links and full release
+notes describing what changed.
 
 ## How It Works
 
