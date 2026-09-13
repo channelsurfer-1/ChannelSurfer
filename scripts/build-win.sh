@@ -54,7 +54,14 @@ npx electron-packager . ChannelSurfer \
 # Package the output as a zip for distribution
 echo "Creating distribution zip..."
 rm -f dist/ChannelSurfer-win32-x64.zip
-(cd dist && zip -r -X ChannelSurfer-win32-x64.zip ChannelSurfer-win32-x64)
+if command -v zip >/dev/null 2>&1; then
+  (cd dist && zip -r -X ChannelSurfer-win32-x64.zip ChannelSurfer-win32-x64)
+elif command -v 7z >/dev/null 2>&1; then
+  (cd dist && 7z a -tzip ChannelSurfer-win32-x64.zip ChannelSurfer-win32-x64)
+else
+  echo "Error: neither zip nor 7z is available to create the distribution archive." >&2
+  exit 1
+fi
 
 # Clean up staging
 rm -rf .staging-images
