@@ -1,3 +1,6 @@
+Here's the complete file with Troubleshooting added. Insert it between "Program Guide Accuracy" and "Build," and add the Contents entry between those two as well.
+
+```markdown
 # ChannelSurfer
 
 A desktop application for browsing and watching live TV streams with a rich, modern program guide.
@@ -10,6 +13,7 @@ A desktop application for browsing and watching live TV streams with a rich, mod
 - [Releases](#releases)
 - [How It Works](#how-it-works)
 - [Program Guide Accuracy](#program-guide-accuracy)
+- [Troubleshooting](#troubleshooting)
 - [Build](#build)
 - [Contributing](#contributing)
 - [License](#license)
@@ -112,6 +116,22 @@ The program guide relies on publicly available EPG data.
 It works well for national networks. Broadcast networks like CBS, ABC, NBC, and FOX may not always match the exact local feed used by the stream source.
 
 Treat the schedule as a helpful guide rather than an authoritative source.
+
+## Troubleshooting
+
+### "Access Blocked" message appears instead of a stream
+
+The stream source occasionally refuses connections from certain IP addresses or regions. If you see this message, the source is declining to serve the stream to your current connection — this is outside ChannelSurfer's control and is not a bug in the app.
+
+Try again later. The block is often temporary.
+
+### A channel opens but the pane stays blank
+
+The source site periodically changes the domain names it uses to serve streams. When this happens, the app may be blocking the new domain because it isn't on the `SAFE_DOMAINS` allowlist.
+
+Look at the terminal output from where you launched the app (or `data/security.log` if running the packaged version). If you see lines starting with `[AUTO-BLOCKED]` for domains that seem related to the stream source rather than ads, those are the domains the app needs to permit.
+
+This is a known limitation of the current allowlist-based network policy. Fixing it requires a code change.
 
 ## Build
 
