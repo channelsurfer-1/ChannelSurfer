@@ -1,6 +1,3 @@
-Here's the complete file with Troubleshooting added. Insert it between "Program Guide Accuracy" and "Build," and add the Contents entry between those two as well.
-
-```markdown
 # ChannelSurfer
 
 A desktop application for browsing and watching live TV streams with a rich, modern program guide.
