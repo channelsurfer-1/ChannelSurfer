@@ -20,15 +20,7 @@ node src/generateScheduleJson.js
 
 # Stage images/ for packaging, excluding local-only content
 echo "Staging images..."
-rm -rf .staging-images
-mkdir -p .staging-images
-rsync -a \
-  --exclude='.DS_Store' \
-  --exclude='original/' \
-  --exclude='*.log.txt' \
-  --exclude='rename*.sh' \
-  --exclude='process-minimal.js' \
-  images/ .staging-images/images/
+node scripts/stage-images.js images .staging-images/images
 
 # Common ignore patterns
 IGNORE_PATTERNS=(
