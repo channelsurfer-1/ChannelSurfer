@@ -26,7 +26,9 @@ const SAFE_DOMAINS = [
   'ann.cdn-lab.shop',
   'dromlis.vmalplapis.cfd',
   'vmalplapis.cfd',
-  'gomis.phzampelis.cfd'
+  'gomis.phzampelis.cfd',
+  'tiestep.top',            // 09/13/2026
+  '7odxv0l067ka.net'        // 09/13/2026
 ];
 
 function getSecurityLogPath() {
