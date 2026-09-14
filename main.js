@@ -19,6 +19,7 @@ let streamPlayerDomains = new Set();
 const SAFE_DOMAINS = [
   'dlhd.st',
   'dlstreams.st',
+  'dlive.sx',
   'hamis.romponalis.st',
   'xameleon.phantemlis.top',
   'r2.cloudflarestorage.com',
@@ -27,9 +28,9 @@ const SAFE_DOMAINS = [
   'dromlis.vmalplapis.cfd',
   'vmalplapis.cfd',
   'gomis.phzampelis.cfd',
-  'tiestep.top',            // 09/13/2026
-  '7odxv0l067ka.net',       // 09/13/2026
-  'assetrage.net'           // 09/13/2026
+  'tiestep.top',              // 09/13/2026
+  '7odxv0l067ka.net',         // 09/13/2026
+  'assetrage.net'             // 09/14/2026
 ];
 
 function getSecurityLogPath() {
@@ -65,7 +66,7 @@ function writeSecurityLog(entry) {
 }
 
 function isStreamPlayerPage(url) {
-  return url.includes('/stream/stream-') && url.endsWith('.php');
+  return (url.includes('/stream/stream-') || url.includes('/watch/stream-')) && url.endsWith('.php');
 }
 
 function isStreamingContent(url) {
