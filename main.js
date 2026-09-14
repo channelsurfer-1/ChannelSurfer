@@ -15,6 +15,7 @@ let windowCreated = false;
 let schedulePath = '';
 let blockedDomainsLogged = new Set();
 let streamPlayerDomains = new Set();
+const trackedStreamWebviews = new Set();
 
 // ---------- Remote config ----------
 const CONFIG_URL = 'https://gist.githubusercontent.com/channelsurfer-1/cf46021791c0140d8321675b2fcead7b/raw/config.json';
@@ -312,6 +313,22 @@ function createWindow() {
     }
   );
 
+  session.defaultSession.webRequest.onCompleted(
+    { urls: ['*://*/*'] },
+    (details) => {
+      try {
+        if (!details.url.includes('.m3u8')) return;
+        if (!trackedStreamWebviews.has(details.webContentsId)) return;
+        if (details.statusCode >= 400) return;
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('stream-attempt-success', {
+            webContentsId: details.webContentsId
+          });
+        }
+      } catch (_) {}
+    }
+  );
+
   win.webContents.setWindowOpenHandler(() => {
     return { action: 'allow' };
   });
@@ -334,6 +351,18 @@ ipcMain.handle('get-schedule-path', () => schedulePath);
 ipcMain.handle('get-stream-base-urls', () => {
   console.log('Renderer requested base URLs:', activeConfig.baseStreamUrls.length, 'candidates');
   return activeConfig.baseStreamUrls;
+});
+
+ipcMain.on('register-stream-attempt', (event, payload) => {
+  if (payload && typeof payload.webContentsId === 'number') {
+    trackedStreamWebviews.add(payload.webContentsId);
+  }
+});
+
+ipcMain.on('unregister-stream-attempt', (event, payload) => {
+  if (payload && typeof payload.webContentsId === 'number') {
+    trackedStreamWebviews.delete(payload.webContentsId);
+  }
 });
 
 ipcMain.on('schedule-rendered', () => {
