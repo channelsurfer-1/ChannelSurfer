@@ -23,7 +23,13 @@ let scheduleScrollPositions = {
   quad: [0, 0, 0, 0]
 };
 
-const BASE_STREAM_URL = 'https://dlive.sx/stream/stream-';
+const BASE_STREAM_URL_FALLBACK = 'https://dlive.sx/stream/stream-';
+let streamBaseUrls = [BASE_STREAM_URL_FALLBACK];
+let currentBaseUrlIndex = 0;
+
+function getCurrentBaseUrl() {
+  return streamBaseUrls[currentBaseUrlIndex] || BASE_STREAM_URL_FALLBACK;
+}
 
 function updateModeButtonIcons() {
   const singleBtn = document.querySelector('[data-mode="single"]');
@@ -341,7 +347,6 @@ function showScheduleOverlay(pane, paneIndex, existingProgram) {
     if (otherPane !== pane) {
       const otherOverlay = otherPane.querySelector('.pane-schedule-overlay');
       if (otherOverlay) {
-        // Save the scroll position of the overlay being removed
         const otherListContainer = otherOverlay.querySelector('.pane-schedule-list');
         if (otherListContainer) {
           scheduleScrollPositions[currentViewMode][index] = otherListContainer.scrollTop;
@@ -430,7 +435,6 @@ function showScheduleOverlay(pane, paneIndex, existingProgram) {
 
   populateScheduleList(listContainer, pane, paneIndex);
   
-  // Restore scroll position after rendering
   listContainer.scrollTop = scheduleScrollPositions[currentViewMode][paneIndex] || 0;
   
   updateModeButtonIcons();
@@ -518,17 +522,18 @@ function populateScheduleList(listContainer, pane, paneIndex) {
 
       hideTooltip();
 
-      // Save scroll position before closing
       const listContainer = pane.querySelector('.pane-schedule-list');
       if (listContainer) {
         scheduleScrollPositions[currentViewMode][paneIndex] = listContainer.scrollTop;
       }
 
+      const streamUrl = `${getCurrentBaseUrl()}${stationObj.dlhdId}.php`;
+
       viewStates[currentViewMode][paneIndex] = {
         stationName: displayName,
         dlhdId: stationObj.dlhdId,
         programName: programTitle,
-        url: `${BASE_STREAM_URL}${stationObj.dlhdId}.php`
+        url: streamUrl
       };
 
       scheduleOverlayStates[currentViewMode][paneIndex] = false;
@@ -544,7 +549,7 @@ function populateScheduleList(listContainer, pane, paneIndex) {
 
       pane.innerHTML = '';
 
-      const webview = createWebview(displayName, `${BASE_STREAM_URL}${stationObj.dlhdId}.php`);
+      const webview = createWebview(displayName, streamUrl);
       pane.appendChild(webview);
 
       if (programTitle) {
@@ -668,7 +673,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await response.json();
       scheduleData = data;
       
-      // Reset scroll positions when schedule data reloads
       scheduleScrollPositions = {
         single: [0],
         split: [0, 0],
@@ -745,6 +749,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (p) schedulePath = p;
       loadSchedule();
     });
+    ipcRenderer.invoke('get-stream-base-urls').then((urls) => {
+      if (Array.isArray(urls) && urls.length > 0) {
+        streamBaseUrls = urls;
+        currentBaseUrlIndex = 0;
+      }
+    }).catch(() => {});
   } catch (_) {
     loadSchedule();
   }

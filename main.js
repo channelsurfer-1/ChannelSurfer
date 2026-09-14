@@ -331,7 +331,10 @@ function createWindow() {
 }
 
 ipcMain.handle('get-schedule-path', () => schedulePath);
-ipcMain.handle('get-stream-base-urls', () => activeConfig.baseStreamUrls);
+ipcMain.handle('get-stream-base-urls', () => {
+  console.log('Renderer requested base URLs:', activeConfig.baseStreamUrls.length, 'candidates');
+  return activeConfig.baseStreamUrls;
+});
 
 ipcMain.on('schedule-rendered', () => {
   if (win && !win.isVisible()) {
