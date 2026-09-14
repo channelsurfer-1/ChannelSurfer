@@ -10,6 +10,7 @@ A desktop application for browsing and watching live TV streams with a rich, mod
 - [Releases](#releases)
 - [How It Works](#how-it-works)
 - [Program Guide Accuracy](#program-guide-accuracy)
+- [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
 - [Build](#build)
 - [Contributing](#contributing)
@@ -53,6 +54,10 @@ Watch multiple channels at once.
 - **Dual View** — Watch two programs concurrently
 - **Grid View** — Watch up to four programs concurrently
 - Individual panels expand to fullscreen when the player's fullscreen button is clicked
+
+### 🔄 Automatic Failover
+
+The stream source occasionally changes the domains and URL paths it uses to serve content. When this happens, ChannelSurfer tries a list of known player URLs in order and uses the first one that plays. Recovery is automatic — no action needed from the user.
 
 ### 🛡️ Built-in Protection
 
@@ -106,6 +111,10 @@ notes describing what changed.
 5. Switch from Single to Dual or Grid View to view more than one program at a time
 6. Closing a program returns the panel to the program guide
 
+If the primary stream URL fails, the app automatically tries alternate
+sources before giving up. A brief "Connecting… trying server N of M"
+message appears in the panel during this process.
+
 ## Program Guide Accuracy
 
 The program guide relies on publicly available EPG data.
@@ -113,6 +122,54 @@ The program guide relies on publicly available EPG data.
 It works well for national networks. Broadcast networks like CBS, ABC, NBC, and FOX may not always match the exact local feed used by the stream source.
 
 Treat the schedule as a helpful guide rather than an authoritative source.
+
+## Configuration
+
+ChannelSurfer loads a small remote configuration file on startup. This allows
+the list of trusted domains and the list of stream player URLs to be updated
+without rebuilding or redistributing the app.
+
+**Config location:**
+
+```
+https://gist.githubusercontent.com/channelsurfer-1/cf46021791c0140d8321675b2fcead7b/raw/config.json
+```
+
+**Fields:**
+
+- `baseStreamUrls` — list of stream player URL prefixes, tried in order.
+  The channel ID is appended directly, followed by `.php`. For example,
+  the prefix `https://dlive.sx/stream/stream-` becomes
+  `https://dlive.sx/stream/stream-51.php` for channel 51.
+- `safeDomains` — list of domains the app is permitted to contact.
+  All other network requests are blocked.
+
+**Loading order:**
+
+1. Remote config (the gist above)
+2. Local cache (`userData/config.json`, written whenever the remote loads successfully)
+3. Hardcoded baseline (in `main.js`)
+
+If the remote fetch fails, the app falls back to the cache. If the cache is
+empty, it falls back to the baseline. The app continues to work in all cases.
+
+**How to update:**
+
+1. Edit the gist.
+2. Restart the app.
+
+No rebuild, no re-release, no waiting for users to update.
+
+**When to update:**
+
+- If a stream stops playing and the terminal shows `[AUTO-BLOCKED]` lines for
+  a domain that looks like stream infrastructure rather than an ad or tracker,
+  add that domain to `safeDomains`.
+- If the app cannot connect to any candidate URL, inspect the stream source's
+  current player URL in a browser and add or update `baseStreamUrls` accordingly.
+
+A reference copy of the config file is kept in the repository at
+`documentation/config.example.json`.
 
 ## Troubleshooting
 
@@ -122,13 +179,36 @@ The stream source occasionally refuses connections from certain IP addresses or 
 
 Try again later. The block is often temporary.
 
-### A channel opens but the pane stays blank
+### A channel opens but the pane stays blank or shows "All servers failed"
 
-The source site periodically changes the domain names it uses to serve streams. When this happens, the app may be blocking the new domain because it isn't on the `SAFE_DOMAINS` allowlist.
+The source site periodically changes both the domain names it uses to serve
+streams and the URL path of the player page itself. ChannelSurfer handles
+both cases:
 
-Look at the terminal output from where you launched the app (or `data/security.log` if running the packaged version). If you see lines starting with `[AUTO-BLOCKED]` for domains that seem related to the stream source rather than ads, those are the domains the app needs to permit.
+- Its allowlist of trusted domains is fetched from a remote config, so new
+  domains can be added without rebuilding the app.
+- Its list of stream player URLs is also remote, and the app tries them in
+  order until one works.
 
-This is a known limitation of the current allowlist-based network policy. Fixing it requires a code change.
+If playback fails on all candidates, look at the terminal output (or
+`data/security.log` if running the packaged version) for lines starting with
+`[AUTO-BLOCKED]`. If any blocked domain looks like stream infrastructure
+rather than an ad or tracker, add it to `safeDomains` in the config — see
+[Configuration](#configuration).
+
+### Deciding what's "stream infrastructure" vs. an ad
+
+Blocked domains fall into two rough categories:
+
+- **Ads and trackers** — often random-looking domains ending in `.com`,
+  `.xyz`, `.site`, `.space`, or `.online`, frequently serving `.js`, `.css`,
+  or tracking `xhr`/`ping` requests.
+- **Stream infrastructure** — often served from CDNs or domains that appear
+  alongside actual video playback (HLS manifests, segments, encryption keys).
+
+If you're unsure, err on the side of leaving a domain blocked, and add it
+only if playback is failing and the domain appears in the block list at the
+same moment.
 
 ## Build
 
