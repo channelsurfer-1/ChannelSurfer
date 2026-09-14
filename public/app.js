@@ -24,11 +24,16 @@ let scheduleScrollPositions = {
 };
 
 const BASE_STREAM_URL_FALLBACK = 'https://dlive.sx/stream/stream-';
-let streamBaseUrls = [BASE_STREAM_URL_FALLBACK];
-let currentBaseUrlIndex = 0;
+const STREAM_ATTEMPT_TIMEOUT_MS = 20000;
 
-function getCurrentBaseUrl() {
-  return streamBaseUrls[currentBaseUrlIndex] || BASE_STREAM_URL_FALLBACK;
+let streamBaseUrls = [BASE_STREAM_URL_FALLBACK];
+const streamAttempts = new Map();
+
+function sendIpc(channel, payload) {
+  try {
+    const { ipcRenderer } = require('electron');
+    ipcRenderer.send(channel, payload);
+  } catch (_) {}
 }
 
 function updateModeButtonIcons() {
@@ -129,6 +134,218 @@ function createWebview(title, url) {
 
   return webview;
 }
+
+function attachPaneLabel(pane, stationName, programTitle) {
+  const label = document.createElement('div');
+  label.className = 'pane-label';
+
+  const logoImg = document.createElement('img');
+  logoImg.className = 'pane-label-logo';
+  const logoFileName = stationName.replace(/ USA$/i, '').trim();
+  logoImg.src = `../images/logos/badges/${encodeURIComponent(logoFileName)}.png`;
+  logoImg.onerror = function() {
+    this.style.display = 'none';
+  };
+
+  const labelText = document.createElement('span');
+  labelText.className = 'pane-label-text';
+  labelText.textContent = programTitle;
+
+  label.appendChild(logoImg);
+  label.appendChild(labelText);
+  pane.appendChild(label);
+}
+
+// ---------- Stream attempt failover ----------
+
+function cancelStreamAttempt(pane) {
+  const attempt = streamAttempts.get(pane);
+  if (!attempt) return;
+  attempt.cancelled = true;
+  if (attempt.timer) {
+    clearTimeout(attempt.timer);
+    attempt.timer = null;
+  }
+  if (attempt.webContentsId !== null) {
+    sendIpc('unregister-stream-attempt', { webContentsId: attempt.webContentsId });
+    attempt.webContentsId = null;
+  }
+  if (attempt.webview) {
+    attempt.webview.remove();
+    attempt.webview = null;
+  }
+  if (attempt.indicator) {
+    attempt.indicator.remove();
+    attempt.indicator = null;
+  }
+  streamAttempts.delete(pane);
+}
+
+function cancelAllStreamAttempts() {
+  for (const pane of Array.from(streamAttempts.keys())) {
+    cancelStreamAttempt(pane);
+  }
+}
+
+function attemptStream(pane, paneIndex, stationName, dlhdId, programTitle) {
+  cancelStreamAttempt(pane);
+  pane.innerHTML = '';
+  pane.style.position = 'relative';
+
+  const attempt = {
+    pane: pane,
+    paneIndex: paneIndex,
+    stationName: stationName,
+    dlhdId: dlhdId,
+    programTitle: programTitle,
+    candidateIndex: 0,
+    webview: null,
+    webContentsId: null,
+    timer: null,
+    indicator: null,
+    cancelled: false
+  };
+
+  streamAttempts.set(pane, attempt);
+  runStreamAttempt(attempt);
+  addPaneCloseButton(pane, paneIndex);
+}
+
+function runStreamAttempt(attempt) {
+  if (attempt.cancelled) return;
+
+  if (attempt.candidateIndex >= streamBaseUrls.length) {
+    failStreamAttempt(attempt);
+    return;
+  }
+
+  const baseUrl = streamBaseUrls[attempt.candidateIndex];
+  const url = `${baseUrl}${attempt.dlhdId}.php`;
+
+  const webview = createWebview(attempt.stationName, url);
+  webview.style.visibility = 'hidden';
+  attempt.webview = webview;
+  attempt.pane.appendChild(webview);
+
+  const indicator = document.createElement('div');
+  indicator.style.position = 'absolute';
+  indicator.style.top = '0';
+  indicator.style.left = '0';
+  indicator.style.right = '0';
+  indicator.style.bottom = '0';
+  indicator.style.display = 'flex';
+  indicator.style.alignItems = 'center';
+  indicator.style.justifyContent = 'center';
+  indicator.style.background = 'rgba(0,0,0,0.75)';
+  indicator.style.color = '#eee';
+  indicator.style.fontSize = '14px';
+  indicator.style.zIndex = '100';
+  indicator.textContent = `Connecting… trying server ${attempt.candidateIndex + 1} of ${streamBaseUrls.length}`;
+  attempt.indicator = indicator;
+  attempt.pane.appendChild(indicator);
+
+  const thisWebview = webview;
+
+  webview.addEventListener('dom-ready', () => {
+    if (attempt.cancelled || attempt.webview !== thisWebview) return;
+    try {
+      const id = thisWebview.getWebContentsId();
+      attempt.webContentsId = id;
+      sendIpc('register-stream-attempt', { webContentsId: id });
+    } catch (_) {}
+  });
+
+  webview.addEventListener('did-fail-load', (e) => {
+    if (attempt.cancelled || attempt.webview !== thisWebview) return;
+    if (!e.isMainFrame) return;
+    if (e.errorCode === -3) return; // ERR_ABORTED
+    advanceStreamAttempt(attempt);
+  });
+
+  attempt.timer = setTimeout(() => {
+    if (attempt.cancelled || attempt.webview !== thisWebview) return;
+    advanceStreamAttempt(attempt);
+  }, STREAM_ATTEMPT_TIMEOUT_MS);
+}
+
+function advanceStreamAttempt(attempt) {
+  if (attempt.cancelled) return;
+
+  if (attempt.timer) {
+    clearTimeout(attempt.timer);
+    attempt.timer = null;
+  }
+  if (attempt.webContentsId !== null) {
+    sendIpc('unregister-stream-attempt', { webContentsId: attempt.webContentsId });
+    attempt.webContentsId = null;
+  }
+  if (attempt.webview) {
+    attempt.webview.remove();
+    attempt.webview = null;
+  }
+  if (attempt.indicator) {
+    attempt.indicator.remove();
+    attempt.indicator = null;
+  }
+
+  attempt.candidateIndex++;
+  runStreamAttempt(attempt);
+}
+
+function succeedStreamAttempt(attempt) {
+  streamAttempts.delete(attempt.pane);
+
+  if (attempt.timer) {
+    clearTimeout(attempt.timer);
+    attempt.timer = null;
+  }
+  if (attempt.webContentsId !== null) {
+    sendIpc('unregister-stream-attempt', { webContentsId: attempt.webContentsId });
+    attempt.webContentsId = null;
+  }
+  if (attempt.indicator) {
+    attempt.indicator.remove();
+    attempt.indicator = null;
+  }
+  if (attempt.webview) {
+    attempt.webview.style.visibility = '';
+  }
+  if (attempt.programTitle) {
+    attachPaneLabel(attempt.pane, attempt.stationName, attempt.programTitle);
+  }
+}
+
+function failStreamAttempt(attempt) {
+  streamAttempts.delete(attempt.pane);
+
+  if (attempt.webview) {
+    attempt.webview.remove();
+    attempt.webview = null;
+  }
+  if (attempt.indicator) {
+    attempt.indicator.remove();
+    attempt.indicator = null;
+  }
+
+  const failure = document.createElement('div');
+  failure.style.position = 'absolute';
+  failure.style.top = '0';
+  failure.style.left = '0';
+  failure.style.right = '0';
+  failure.style.bottom = '0';
+  failure.style.display = 'flex';
+  failure.style.alignItems = 'center';
+  failure.style.justifyContent = 'center';
+  failure.style.background = 'rgba(0,0,0,0.85)';
+  failure.style.color = '#f88';
+  failure.style.fontSize = '14px';
+  failure.style.textAlign = 'center';
+  failure.style.padding = '20px';
+  failure.textContent = 'Could not connect to stream. All servers failed.';
+  attempt.pane.appendChild(failure);
+}
+
+// ---------- End stream attempt failover ----------
 
 function showTooltip(e) {
   const text = e.currentTarget.dataset.tooltip;
@@ -264,6 +481,8 @@ function renderView() {
   const maxPanes = getMaxPanes();
   const viewState = viewStates[currentViewMode];
 
+  cancelAllStreamAttempts();
+
   allPanes.forEach((pane, index) => {
     pane.style.display = index < maxPanes ? 'block' : 'none';
   });
@@ -291,31 +510,7 @@ function renderView() {
     if (!pane) return;
 
     if (program) {
-      const webview = createWebview(program.stationName, program.url);
-      pane.appendChild(webview);
-
-      if (program.programName) {
-        const label = document.createElement('div');
-        label.className = 'pane-label';
-
-        const logoImg = document.createElement('img');
-        logoImg.className = 'pane-label-logo';
-        const logoFileName = program.stationName.replace(/ USA$/i, '').trim();
-        logoImg.src = `../images/logos/badges/${encodeURIComponent(logoFileName)}.png`;
-        logoImg.onerror = function() {
-          this.style.display = 'none';
-        };
-
-        const labelText = document.createElement('span');
-        labelText.className = 'pane-label-text';
-        labelText.textContent = program.programName;
-
-        label.appendChild(logoImg);
-        label.appendChild(labelText);
-        pane.appendChild(label);
-      }
-
-      addPaneCloseButton(pane, index);
+      attemptStream(pane, index, program.stationName, program.dlhdId, program.programName);
     } else {
       const placeholder = document.createElement('div');
       placeholder.className = 'pane-placeholder';
@@ -527,13 +722,10 @@ function populateScheduleList(listContainer, pane, paneIndex) {
         scheduleScrollPositions[currentViewMode][paneIndex] = listContainer.scrollTop;
       }
 
-      const streamUrl = `${getCurrentBaseUrl()}${stationObj.dlhdId}.php`;
-
       viewStates[currentViewMode][paneIndex] = {
         stationName: displayName,
         dlhdId: stationObj.dlhdId,
-        programName: programTitle,
-        url: streamUrl
+        programName: programTitle
       };
 
       scheduleOverlayStates[currentViewMode][paneIndex] = false;
@@ -542,38 +734,7 @@ function populateScheduleList(listContainer, pane, paneIndex) {
 
       updateModeButtonIcons();
 
-      const overlay = pane.querySelector('.pane-schedule-overlay');
-      if (overlay) {
-        overlay.remove();
-      }
-
-      pane.innerHTML = '';
-
-      const webview = createWebview(displayName, streamUrl);
-      pane.appendChild(webview);
-
-      if (programTitle) {
-        const label = document.createElement('div');
-        label.className = 'pane-label';
-
-        const logoImg = document.createElement('img');
-        logoImg.className = 'pane-label-logo';
-        const logoFileName = stationName.replace(/ USA$/i, '').trim();
-        logoImg.src = `../images/logos/badges/${encodeURIComponent(logoFileName)}.png`;
-        logoImg.onerror = function() {
-          this.style.display = 'none';
-        };
-
-        const labelText = document.createElement('span');
-        labelText.className = 'pane-label-text';
-        labelText.textContent = programTitle;
-
-        label.appendChild(logoImg);
-        label.appendChild(labelText);
-        pane.appendChild(label);
-      }
-
-      addPaneCloseButton(pane, paneIndex);
+      attemptStream(pane, paneIndex, displayName, stationObj.dlhdId, programTitle);
     });
 
     listContainer.appendChild(row);
@@ -589,11 +750,8 @@ function addPaneCloseButton(pane, paneIndex) {
   closeBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     
-    const webview = pane.querySelector('webview');
-    if (webview) {
-      webview.remove();
-    }
-    
+    cancelStreamAttempt(pane);
+
     viewStates[currentViewMode][paneIndex] = null;
     scheduleOverlayStates[currentViewMode][paneIndex] = false;
     updateModeButtonIcons();
@@ -752,9 +910,18 @@ document.addEventListener('DOMContentLoaded', () => {
     ipcRenderer.invoke('get-stream-base-urls').then((urls) => {
       if (Array.isArray(urls) && urls.length > 0) {
         streamBaseUrls = urls;
-        currentBaseUrlIndex = 0;
       }
     }).catch(() => {});
+
+    ipcRenderer.on('stream-attempt-success', (event, payload) => {
+      if (!payload || typeof payload.webContentsId !== 'number') return;
+      for (const attempt of streamAttempts.values()) {
+        if (attempt.webContentsId === payload.webContentsId) {
+          succeedStreamAttempt(attempt);
+          return;
+        }
+      }
+    });
   } catch (_) {
     loadSchedule();
   }
