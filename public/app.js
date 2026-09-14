@@ -23,7 +23,7 @@ let scheduleScrollPositions = {
   quad: [0, 0, 0, 0]
 };
 
-const BASE_STREAM_URL = 'https://dlhd.st/stream/stream-';
+const BASE_STREAM_URL = 'https://dlstreams.st/watch/stream-';
 
 function updateModeButtonIcons() {
   const singleBtn = document.querySelector('[data-mode="single"]');
