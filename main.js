@@ -16,22 +16,108 @@ let schedulePath = '';
 let blockedDomainsLogged = new Set();
 let streamPlayerDomains = new Set();
 
-const SAFE_DOMAINS = [
-  'dlhd.st',
-  'dlstreams.st',
-  'dlive.sx',
-  'hamis.romponalis.st',
-  'xameleon.phantemlis.top',
-  'r2.cloudflarestorage.com',
-  'cdn.jsdelivr.net',
-  'ann.cdn-lab.shop',
-  'dromlis.vmalplapis.cfd',
-  'vmalplapis.cfd',
-  'gomis.phzampelis.cfd',
-  'tiestep.top',              // 09/13/2026
-  '7odxv0l067ka.net',         // 09/13/2026
-  'assetrage.net'             // 09/14/2026
-];
+// ---------- Remote config ----------
+const CONFIG_URL = 'https://gist.githubusercontent.com/channelsurfer-1/cf46021791c0140d8321675b2fcead7b/raw/config.json';
+const CONFIG_FETCH_TIMEOUT_MS = 5000;
+
+const BASELINE_CONFIG = {
+  baseStreamUrls: [
+    'https://dlive.sx/stream/stream-',
+    'https://dlstreams.st/watch/stream-',
+    'https://dlhd.st/stream/stream-',
+    'https://dlive.sx/watch/stream-'
+  ],
+  safeDomains: [
+    'dlhd.st',
+    'dlstreams.st',
+    'dlive.sx',
+    'hamis.romponalis.st',
+    'xameleon.phantemlis.top',
+    'r2.cloudflarestorage.com',
+    'cdn.jsdelivr.net',
+    'ann.cdn-lab.shop',
+    'dromlis.vmalplapis.cfd',
+    'vmalplapis.cfd',
+    'gomis.phzampelis.cfd',
+    'tiestep.top',
+    '7odxv0l067ka.net',
+    'assetrage.net'
+  ]
+};
+
+let activeConfig = BASELINE_CONFIG;
+
+function getConfigCachePath() {
+  return path.join(app.getPath('userData'), 'config.json');
+}
+
+function validateConfig(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+  if (!Array.isArray(obj.baseStreamUrls) || obj.baseStreamUrls.length === 0) return null;
+  if (!Array.isArray(obj.safeDomains) || obj.safeDomains.length === 0) return null;
+  for (const u of obj.baseStreamUrls) if (typeof u !== 'string' || !u) return null;
+  for (const d of obj.safeDomains) if (typeof d !== 'string' || !d) return null;
+  return { baseStreamUrls: obj.baseStreamUrls, safeDomains: obj.safeDomains };
+}
+
+async function fetchWithTimeout(url, ms) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function readCachedConfig() {
+  try {
+    const p = getConfigCachePath();
+    if (!fs.existsSync(p)) return null;
+    const raw = fs.readFileSync(p, 'utf8');
+    return validateConfig(JSON.parse(raw));
+  } catch (err) {
+    console.error('Config: failed to read cache:', err.message);
+    return null;
+  }
+}
+
+function writeCachedConfig(config) {
+  try {
+    const p = getConfigCachePath();
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(config, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Config: failed to write cache:', err.message);
+  }
+}
+
+async function loadConfig() {
+  try {
+    const remote = await fetchWithTimeout(CONFIG_URL, CONFIG_FETCH_TIMEOUT_MS);
+    const validated = validateConfig(remote);
+    if (validated) {
+      console.log('Config: loaded from remote');
+      writeCachedConfig(validated);
+      return validated;
+    }
+    console.warn('Config: remote payload invalid, ignoring');
+  } catch (err) {
+    console.warn('Config: remote fetch failed:', err.message);
+  }
+
+  const cached = readCachedConfig();
+  if (cached) {
+    console.log('Config: loaded from cache');
+    return cached;
+  }
+
+  console.log('Config: using hardcoded baseline');
+  return BASELINE_CONFIG;
+}
+// ---------- End remote config ----------
 
 function getSecurityLogPath() {
   const dataDir = app.isPackaged
@@ -85,7 +171,7 @@ function isSafeDomain(url) {
   try {
     const hostname = new URL(url).hostname.toLowerCase();
 
-    for (const domain of SAFE_DOMAINS) {
+    for (const domain of activeConfig.safeDomains) {
       if (hostname === domain || hostname.endsWith('.' + domain)) {
         return true;
       }
@@ -146,8 +232,8 @@ function createWindow() {
     title: '📺 ChannelSurfer',
     width: 1200,
     height: 800,
-    show: false,  // Don't show until content is ready
-    backgroundColor: '#1a1a1a',  // Match your app's background color
+    show: false,
+    backgroundColor: '#1a1a1a',
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -236,8 +322,6 @@ function createWindow() {
     console.error('Failed to load HTML file:', err);
   });
 
-  // Window is shown by the 'schedule-rendered' IPC event after the first render.
-  // Safety fallback: show the window after 10 seconds if the renderer never signals.
   setTimeout(() => {
     if (win && !win.isVisible()) {
       console.warn('Schedule render timed out; showing window anyway.');
@@ -247,6 +331,7 @@ function createWindow() {
 }
 
 ipcMain.handle('get-schedule-path', () => schedulePath);
+ipcMain.handle('get-stream-base-urls', () => activeConfig.baseStreamUrls);
 
 ipcMain.on('schedule-rendered', () => {
   if (win && !win.isVisible()) {
@@ -257,7 +342,8 @@ ipcMain.on('schedule-rendered', () => {
 app.whenReady().then(async () => {
   resetSecurityLog();
 
-  // Register custom protocol for serving images from the images/ directory
+  activeConfig = await loadConfig();
+
   protocol.registerFileProtocol('app', (request, callback) => {
     const url = request.url.substr(6);
     const imagePath = path.join(__dirname, 'images', url);
