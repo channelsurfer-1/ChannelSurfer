@@ -36,6 +36,10 @@ function sendIpc(channel, payload) {
   } catch (_) {}
 }
 
+function logToMain(message) {
+  sendIpc('renderer-log', message);
+}
+
 function updateModeButtonIcons() {
   const singleBtn = document.querySelector('[data-mode="single"]');
   if (singleBtn) {
@@ -203,7 +207,9 @@ function attemptStream(pane, paneIndex, stationName, dlhdId, programTitle) {
     webContentsId: null,
     timer: null,
     indicator: null,
-    cancelled: false
+    cancelled: false,
+    overallStartTime: Date.now(),
+    candidateStartTime: null
   };
 
   streamAttempts.set(pane, attempt);
@@ -218,6 +224,8 @@ function runStreamAttempt(attempt) {
     failStreamAttempt(attempt);
     return;
   }
+
+  attempt.candidateStartTime = Date.now();
 
   const baseUrl = streamBaseUrls[attempt.candidateIndex];
   const url = `${baseUrl}${attempt.dlhdId}.php`;
@@ -238,7 +246,7 @@ function runStreamAttempt(attempt) {
   indicator.style.justifyContent = 'center';
   indicator.style.background = 'rgba(0,0,0,0.75)';
   indicator.style.color = '#eee';
-  indicator.style.fontSize = '14px';
+  indicator.style.fontSize = '1rem';
   indicator.style.zIndex = '100';
   indicator.textContent = `Connecting… trying server ${attempt.candidateIndex + 1} of ${streamBaseUrls.length}`;
   attempt.indicator = indicator;
@@ -271,6 +279,11 @@ function runStreamAttempt(attempt) {
 function advanceStreamAttempt(attempt) {
   if (attempt.cancelled) return;
 
+  const elapsed = attempt.candidateStartTime
+    ? ((Date.now() - attempt.candidateStartTime) / 1000).toFixed(1)
+    : '?';
+  logToMain(`Stream candidate ${attempt.candidateIndex + 1}/${streamBaseUrls.length} failed after ${elapsed}s`);
+
   if (attempt.timer) {
     clearTimeout(attempt.timer);
     attempt.timer = null;
@@ -295,6 +308,11 @@ function advanceStreamAttempt(attempt) {
 function succeedStreamAttempt(attempt) {
   streamAttempts.delete(attempt.pane);
 
+  const elapsed = attempt.candidateStartTime
+    ? ((Date.now() - attempt.candidateStartTime) / 1000).toFixed(1)
+    : '?';
+  logToMain(`Stream connected in ${elapsed}s (candidate ${attempt.candidateIndex + 1}/${streamBaseUrls.length})`);
+
   if (attempt.timer) {
     clearTimeout(attempt.timer);
     attempt.timer = null;
@@ -318,6 +336,11 @@ function succeedStreamAttempt(attempt) {
 function failStreamAttempt(attempt) {
   streamAttempts.delete(attempt.pane);
 
+  const elapsed = attempt.overallStartTime
+    ? ((Date.now() - attempt.overallStartTime) / 1000).toFixed(1)
+    : '?';
+  logToMain(`Stream failed: all ${streamBaseUrls.length} candidates exhausted after ${elapsed}s`);
+
   if (attempt.webview) {
     attempt.webview.remove();
     attempt.webview = null;
@@ -338,7 +361,7 @@ function failStreamAttempt(attempt) {
   failure.style.justifyContent = 'center';
   failure.style.background = 'rgba(0,0,0,0.85)';
   failure.style.color = '#f88';
-  failure.style.fontSize = '14px';
+  failure.style.fontSize = '1rem';
   failure.style.textAlign = 'center';
   failure.style.padding = '20px';
   failure.textContent = 'Could not connect to stream. All servers failed.';

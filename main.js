@@ -365,6 +365,12 @@ ipcMain.on('unregister-stream-attempt', (event, payload) => {
   }
 });
 
+ipcMain.on('renderer-log', (event, message) => {
+  if (typeof message === 'string') {
+    console.log(message);
+  }
+});
+
 ipcMain.on('schedule-rendered', () => {
   if (win && !win.isVisible()) {
     win.show();
