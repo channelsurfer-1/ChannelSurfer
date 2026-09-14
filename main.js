@@ -28,7 +28,8 @@ const SAFE_DOMAINS = [
   'vmalplapis.cfd',
   'gomis.phzampelis.cfd',
   'tiestep.top',            // 09/13/2026
-  '7odxv0l067ka.net'        // 09/13/2026
+  '7odxv0l067ka.net',       // 09/13/2026
+  'assetrage.net'           // 09/13/2026
 ];
 
 function getSecurityLogPath() {
