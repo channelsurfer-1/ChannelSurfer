@@ -29,6 +29,8 @@ const STREAM_ATTEMPT_TIMEOUT_MS = 7000;
 let streamBaseUrls = [BASE_STREAM_URL_FALLBACK];
 const streamAttempts = new Map();
 let debugMode = false;
+const failedRecoveryCombos = new Set(); // recovery: tested-and-failed domain sets (session only)
+let pendingRecoveryTest = null;         // recovery: { key, wrapper } while a test retry is in flight
 
 if (!document.getElementById('connecting-dots-style')) {
   const style = document.createElement('style');
@@ -357,7 +359,7 @@ function runStreamAttempt(attempt) {
       logToMain('[WV:' + attempt.dlhdId + '] ' + e.message);
     }
   });
-  
+
   attempt.timer = setTimeout(() => {
     if (attempt.cancelled || attempt.webview !== thisWebview) return;
     advanceStreamAttempt(attempt);
@@ -400,6 +402,11 @@ function succeedStreamAttempt(attempt) {
     ? ((Date.now() - attempt.candidateStartTime) / 1000).toFixed(1)
     : '?';
   logToMain(`Stream connected in ${elapsed}s (candidate ${attempt.candidateIndex + 1}/${streamBaseUrls.length})`);
+
+  if (pendingRecoveryTest && pendingRecoveryTest.wrapper === attempt.wrapper) {
+    logToMain('[RECOVERY] test PASSED, domains: ' + pendingRecoveryTest.key.split('|').join(', '));
+    pendingRecoveryTest = null;
+  }
 
   if (attempt.timer) {
     clearTimeout(attempt.timer);
@@ -455,6 +462,162 @@ function failStreamAttempt(attempt) {
   failure.style.padding = '20px';
   failure.textContent = 'Could not connect to server.';
   attempt.wrapper.appendChild(failure);
+
+  if (pendingRecoveryTest && pendingRecoveryTest.wrapper === attempt.wrapper) {
+    failedRecoveryCombos.add(pendingRecoveryTest.key);
+    logToMain('[RECOVERY] test failed, combo remembered: ' + pendingRecoveryTest.key.split('|').join(', '));
+    pendingRecoveryTest = null;
+  }
+
+  if (isDebug()) {
+    openRecoveryDialog(attempt);
+  }
+}
+
+function recoveryComboKey(domains) {
+  return domains.slice().sort().join('|');
+}
+
+function mkRecoveryBtn(label, primary) {
+  const b = document.createElement('button');
+  b.textContent = label;
+  b.style.cssText = 'padding:8px 16px;border-radius:8px;cursor:pointer;font-size:14px;' +
+    (primary
+      ? 'background:#eee;color:#111;border:none;font-weight:600;'
+      : 'background:transparent;color:#eee;border:1px solid #666;');
+  return b;
+}
+
+// Opens the recovery dialog inside the failed pane. Debug-gated by the caller.
+async function openRecoveryDialog(attempt) {
+  const wrapper = attempt.wrapper;
+  if (!wrapper) return;
+  const old = wrapper.querySelector('.recovery-overlay');
+  if (old) old.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'recovery-overlay';
+  overlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(10,10,12,0.94);color:#eee;z-index:200;display:flex;align-items:center;justify-content:center;font-size:14px;';
+
+  const box = document.createElement('div');
+  box.style.cssText = 'max-width:92%;max-height:92%;overflow:auto;padding:20px 22px;';
+
+  const closeX = document.createElement('button');
+  closeX.textContent = '×';
+  closeX.title = 'Close';
+  closeX.style.cssText = 'position:absolute;top:8px;right:12px;background:none;border:none;color:#999;font-size:20px;cursor:pointer;';
+  overlay.appendChild(closeX);
+
+  const title = document.createElement('div');
+  title.style.cssText = 'font-size:17px;font-weight:600;color:#f88;margin-bottom:4px;';
+  title.textContent = 'Stream unavailable — channel ' + attempt.dlhdId;
+  box.appendChild(title);
+
+  const sub = document.createElement('div');
+  sub.style.cssText = 'color:#999;font-size:13px;margin-bottom:14px;';
+  sub.textContent = 'All ' + streamBaseUrls.length + ' sources failed · recovery options';
+  box.appendChild(sub);
+
+  const diag = document.createElement('div');
+  diag.style.cssText = 'color:#ccc;margin-bottom:14px;line-height:1.45;';
+  diag.textContent = 'Checking for blocked domains in the player chain…';
+  box.appendChild(diag);
+
+  const listHost = document.createElement('div');
+  box.appendChild(listHost);
+
+  const btns = document.createElement('div');
+  btns.style.cssText = 'display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;';
+  box.appendChild(btns);
+
+  overlay.appendChild(box);
+  wrapper.appendChild(overlay);
+  closeX.addEventListener('click', () => overlay.remove());
+
+  let data;
+  try {
+    data = await window.channelSurfer.invoke('get-recovery-candidates');
+  } catch (_) {
+    data = { enabled: false, candidates: [] };
+  }
+
+  if (!data.enabled || !data.candidates || data.candidates.length === 0) {
+    diag.textContent = (!data.enabled)
+      ? 'Recovery dialog is disabled (debug mode off).'
+      : 'No candidate domains found — this failure is likely not a blocked-domain issue.';
+    const closeBtn = mkRecoveryBtn('Close', false);
+    closeBtn.addEventListener('click', () => overlay.remove());
+    btns.appendChild(closeBtn);
+    return;
+  }
+
+  diag.textContent = 'New domains in the player chain were blocked. They are tested together as a set — only kept if playback actually recovers. Uncheck anything that looks like an ad.';
+
+  const checks = [];
+  data.candidates.forEach(c => {
+    const row = document.createElement('label');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid #444;border-radius:8px;margin-bottom:8px;cursor:pointer;';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !!c.checked;
+    cb.dataset.domain = c.domain;
+    cb.style.cssText = 'width:15px;height:15px;flex:none;accent-color:#ddd;';
+
+    const grow = document.createElement('div');
+    grow.style.cssText = 'flex:1;min-width:0;';
+    const name = document.createElement('div');
+    name.style.cssText = 'font-family:monospace;font-size:13px;';
+    name.textContent = c.domain;
+    const meta = document.createElement('div');
+    meta.style.cssText = 'color:#999;font-size:12px;';
+    meta.textContent = 'blocked ' + c.count + '× · ref ' + c.refHost;
+    grow.appendChild(name);
+    grow.appendChild(meta);
+
+    const tag = document.createElement('span');
+    const tagText = { 'chain': 'chain', 'chain?': 'chain?', 'likely-ad': 'likely ad' };
+    const isChain = c.tag === 'chain';
+    tag.style.cssText = 'font-size:11px;padding:2px 8px;border-radius:5px;flex:none;' +
+      (isChain ? 'background:rgba(80,200,120,0.15);color:#7d7;' : 'background:rgba(240,180,60,0.15);color:#fc7;');
+    tag.textContent = tagText[c.tag] || c.tag;
+
+    row.appendChild(cb);
+    row.appendChild(grow);
+    row.appendChild(tag);
+    listHost.appendChild(row);
+    checks.push(cb);
+  });
+
+  const testBtn = mkRecoveryBtn('Test selected', true);
+  const retryBtn = mkRecoveryBtn('Retry without changes', false);
+  const closeBtn = mkRecoveryBtn('Close', false);
+  btns.appendChild(testBtn);
+  btns.appendChild(retryBtn);
+  btns.appendChild(closeBtn);
+
+  closeBtn.addEventListener('click', () => overlay.remove());
+  retryBtn.addEventListener('click', () => {
+    overlay.remove();
+    attemptStream(attempt.pane, attempt.paneIndex, attempt.stationName, attempt.dlhdId, attempt.programTitle);
+  });
+  testBtn.addEventListener('click', () => {
+    const selected = checks.filter(c => c.checked).map(c => c.dataset.domain);
+    if (selected.length === 0) {
+      diag.textContent = 'Select at least one domain to test.';
+      return;
+    }
+    const key = recoveryComboKey(selected);
+    if (failedRecoveryCombos.has(key)) {
+      diag.textContent = 'That combination already failed this session — try a different selection.';
+      return;
+    }
+    pendingRecoveryTest = { key, wrapper: attempt.wrapper };
+    sendIpc('allow-recovery-domains', selected);
+    logToMain('[RECOVERY] testing domains: ' + selected.join(', '));
+    overlay.remove();
+    attemptStream(attempt.pane, attempt.paneIndex, attempt.stationName, attempt.dlhdId, attempt.programTitle);
+  });
 }
 
 // ---------- End stream attempt failover ----------

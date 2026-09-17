@@ -26,6 +26,8 @@ const trackedStreamWebviews = new Set();
 const blockedDomainRefs = new Map();   // hostname -> { refHost, count, lastSeenMs }
 const runtimeAllowedDomains = new Set(); // session-only test allow-set
 let knownPassengers = new Set();       // domains that failed their recovery test
+const chainHosts = new Set();          // derived: hosts observed as streaming referrers or allowed subFrame hosts
+const shellHosts = new Set();          // seeded from baseStreamUrls; shell-ref alone implies ad unless the block was a subFrame
 
 // ---------- Logging ----------
 function log(category, message) {
@@ -357,7 +359,12 @@ function createWindow() {
         }
 
         const prevBlock = blockedDomainRefs.get(hostname);
-        blockedDomainRefs.set(hostname, { refHost, count: prevBlock ? prevBlock.count + 1 : 1, lastSeenMs: Date.now() });
+        blockedDomainRefs.set(hostname, {
+          refHost,
+          count: prevBlock ? prevBlock.count + 1 : 1,
+          lastSeenMs: Date.now(),
+          subFrame: (prevBlock && prevBlock.subFrame) || details.resourceType === 'subFrame'
+        });
 
         callback({ cancel: true });
       } catch (_) {
@@ -373,6 +380,10 @@ function createWindow() {
         const headers = details.requestHeaders || {};
 
         if (isStreamingContent(details.url) && !details.url.includes('.pdf')) {
+          const parityRef = headers['Referer'] || headers['referer'] || '';
+          if (parityRef) {
+            try { chainHosts.add(new URL(parityRef).hostname.toLowerCase()); } catch (_) {}
+          }
           const streamKind = details.url.includes('.m3u8') ? 'm3u8' : 'segment';
           if (debug.enabled) {
             log('HDR', streamKind + ' req ' + truncateUrl(details.url, 130));
@@ -410,6 +421,12 @@ function createWindow() {
           log('HDR', `  out UA=${(headers['User-Agent'] || headers['user-agent'] || '(none)')}`);
           log('HDR', `  out Referer=${headers['Referer'] || headers['referer'] || '(none)'} Origin=${headers['Origin'] || headers['origin'] || '(none)'}`);
         }
+
+        try {
+          if (details.resourceType === 'subFrame') {
+            chainHosts.add(new URL(details.url).hostname.toLowerCase());
+          }
+        } catch (_) {}
 
         callback({ cancel: false, requestHeaders: headers });
       } catch (err) {
@@ -488,6 +505,42 @@ ipcMain.handle('get-debug-mode', () => {
   return debug.enabled;
 });
 
+ipcMain.handle('get-recovery-candidates', () => {
+  if (!debug.enabled) {
+    return { enabled: false, candidates: [] };
+  }
+  const out = [];
+  for (const [domain, info] of blockedDomainRefs) {
+    if (Date.now() - info.lastSeenMs > 10 * 60 * 1000) continue;
+    if (knownPassengers.has(domain)) continue;
+    if (runtimeAllowedDomains.has(domain)) continue;
+    if (activeConfig.safeDomains.some(d => domain === d || domain.endsWith('.' + d))) continue;
+    const viaChainRef = chainHosts.has(info.refHost);
+    const chainContext = viaChainRef || (info.subFrame && shellHosts.has(info.refHost));
+    if (!chainContext) continue;
+    const strong = ((info.subFrame && info.count >= 2) || info.count >= 8);
+    const tag = viaChainRef ? (strong ? 'chain' : 'likely-ad') : 'chain?';
+    out.push({ domain, refHost: info.refHost, count: info.count, tag, checked: viaChainRef && strong });
+  }
+  out.sort((a, b) => b.count - a.count);
+  return { enabled: true, candidates: out.slice(0, 6) };
+});
+
+ipcMain.on('allow-recovery-domains', (event, payload) => {
+  if (Array.isArray(payload)) {
+    const added = [];
+    for (const d of payload) {
+      if (typeof d === 'string' && d) {
+        runtimeAllowedDomains.add(d.toLowerCase());
+        added.push(d.toLowerCase());
+      }
+    }
+    if (added.length > 0) {
+      log('CONFIG', 'Recovery test-allow: ' + added.join(', '));
+    }
+  }
+});
+
 ipcMain.on('register-stream-attempt', (event, payload) => {
   if (payload && typeof payload.webContentsId === 'number') {
     trackedStreamWebviews.add(payload.webContentsId);
@@ -544,6 +597,10 @@ app.whenReady().then(async () => {
     activeConfig.safeDomains = Array.from(new Set([...activeConfig.safeDomains, ...additions.safeDomains]));
   }
   knownPassengers = new Set(additions.passengers);
+
+  for (const u of activeConfig.baseStreamUrls) {
+    try { shellHosts.add(new URL(u).hostname.toLowerCase()); } catch (_) {}
+  }
 
   log('CONFIG', 'Active safeDomains: ' + activeConfig.safeDomains.join(', '));
   if (additions.safeDomains.length > 0) {
