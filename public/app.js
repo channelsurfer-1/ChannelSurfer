@@ -28,6 +28,7 @@ const STREAM_ATTEMPT_TIMEOUT_MS = 5000;
 
 let streamBaseUrls = [BASE_STREAM_URL_FALLBACK];
 const streamAttempts = new Map();
+let debugMode = false;
 
 if (!document.getElementById('connecting-dots-style')) {
   const style = document.createElement('style');
@@ -66,7 +67,7 @@ function logToMain(message) {
 }
 
 function isDebug() {
-  return !!(window.channelSurfer && window.channelSurfer.debug);
+  return debugMode;
 }
 
 // ---------- Per-mode pane content ----------
@@ -351,7 +352,9 @@ function runStreamAttempt(attempt) {
 
   webview.addEventListener('console-message', (e) => {
     if (attempt.cancelled || attempt.webview !== thisWebview) return;
-    if (e.level >= 2 || isDebug()) logToMain('[WV:' + attempt.dlhdId + '] ' + e.message);
+    if (e.level >= 2 || (isDebug() && !e.message.includes('[object Object]'))) {
+      logToMain('[WV:' + attempt.dlhdId + '] ' + e.message);
+    }
   });
 
   attempt.timer = setTimeout(() => {
@@ -1022,6 +1025,13 @@ document.addEventListener('DOMContentLoaded', () => {
     window.channelSurfer.invoke('get-stream-base-urls').then((urls) => {
       if (Array.isArray(urls) && urls.length > 0) {
         streamBaseUrls = urls;
+      }
+    }).catch(() => {});
+
+    window.channelSurfer.invoke('get-debug-mode').then((flag) => {
+      debugMode = flag === true;
+      if (debugMode) {
+        logToMain('[DEBUG] renderer debug mode active');
       }
     }).catch(() => {});
 

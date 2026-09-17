@@ -425,6 +425,13 @@ ipcMain.handle('get-stream-base-urls', () => {
   return activeConfig.baseStreamUrls;
 });
 
+ipcMain.handle('get-debug-mode', () => {
+  if (debug.enabled) {
+    log('DEBUG', 'Renderer confirmed debug mode via IPC');
+  }
+  return debug.enabled;
+});
+
 ipcMain.on('register-stream-attempt', (event, payload) => {
   if (payload && typeof payload.webContentsId === 'number') {
     trackedStreamWebviews.add(payload.webContentsId);
