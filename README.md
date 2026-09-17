@@ -102,12 +102,8 @@ Designed for comfortable viewing in low-light environments.
 
 ## Releases
 
-Pre-built binaries for macOS, Windows, and Linux will be available on the
-[Releases page](https://github.com/channelsurfer-1/ChannelSurfer/releases) once the
-first release is published.
-
-Each release will include platform-specific download links and full release
-notes describing what changed.
+Pre-built binaries for macOS, Windows, and Linux are available on the
+[Releases page](https://github.com/channelsurfer-1/ChannelSurfer/releases).
 
 ## How It Works
 
@@ -133,107 +129,51 @@ Treat the schedule as a helpful guide rather than an authoritative source.
 ## Configuration
 
 ChannelSurfer loads a small remote configuration file on startup. This allows
-the list of trusted domains and the list of stream player URLs to be updated
-without rebuilding or redistributing the app.
+the maintainer to update the list of trusted domains and the list of stream
+player URLs without rebuilding or redistributing the app — fixes reach every
+install on their next launch.
 
-**Config location:**
+**How to update (maintainer):** edit the config gist, then restart the app.
+No rebuild, no re-release.
 
-```
-https://gist.githubusercontent.com/channelsurfer-1/cf46021791c0140d8321675b2fcead7b/raw/config.json
-```
-
-**Fields:**
-
-- `baseStreamUrls` — list of stream player URL prefixes, tried in order.
-  The channel ID is appended directly, followed by `.php`. For example,
-  the prefix `https://dlive.sx/stream/stream-` becomes
-  `https://dlive.sx/stream/stream-51.php` for channel 51.
-- `safeDomains` — list of domains the app is permitted to contact.
-  All other network requests are blocked.
-
-**Loading order:**
-
-1. Remote config (the gist above)
-2. Local cache (`userData/config.json`, written whenever the remote loads successfully)
-3. Hardcoded baseline in `main.js` — a minimal fallback containing only the
-   core stream-site domains, used only if both the remote fetch and the cache
-   fail (e.g. first launch while offline). It exists to guarantee the app
-   always starts in a valid state.
-
-If the remote fetch fails, the app falls back to the cache. If the cache is
-empty, it falls back to the baseline. The app continues to start in all cases.
-
-**How to update:**
-
-1. Edit the gist.
-2. Restart the app.
-
-No rebuild, no re-release, no waiting for users to update.
-
-**When to update:**
-
-- If a stream stops playing, check the terminal output for `[BLOCK]` lines
-  (see below). If a blocked domain looks like stream infrastructure rather
-  than an ad or tracker, add it to `safeDomains`.
-- If the app cannot connect to any candidate URL, inspect the stream source's
-  current player URL in a browser and add or update `baseStreamUrls` accordingly.
-
-A reference copy of the config file is kept in the repository at
-`documentation/config.example.json`.
+**Normal users never need to touch configuration.** If channels stop playing
+across the board, the fix is usually a config update — update the app or wait
+for the shared config to refresh, then try again.
 
 ## Troubleshooting
 
-### "Access Blocked" message appears instead of a stream
+### A channel won't play
 
-The stream source occasionally refuses connections from certain IP addresses or regions. If you see this message, the source is declining to serve the stream to your current connection — this is outside ChannelSurfer's control and is not a bug in the app.
+1. **Try a different channel.** If others work, it's that one stream — try again later.
+2. **Look at the message in the panel.** "Access Blocked" means the *source site* refused your connection (usually regional or IP-based). This is outside the app's control and is often temporary — retry in a while.
+3. **Restart the app.** The shared config updates at launch; a fix may already be live.
 
-Try again later. The block is often temporary.
+### Getting detailed logs (debug mode)
 
-### A channel opens but the pane stays blank or shows "Could not connect to server."
+If a problem keeps happening — and you're reporting it — run with debug logging
+and attach the log:
 
-The source site periodically changes both the domain names it uses to serve
-streams and the URL path of the player page itself. ChannelSurfer handles
-both cases:
-
-- Its allowlist of trusted domains is fetched from a remote config, so new
-  domains can be added without rebuilding the app.
-- Its list of stream player URLs is also remote, and the app tries them in
-  order until one works.
-
-If playback fails on all candidates, look at the terminal output for lines
-like this:
-
-```
-[14:22:20] [BLOCK ] script   s10.histats.com  ref=dlive.sx
+```bash
+CHANNELSURFER_DEBUG=1 npm start
 ```
 
-The full details of every blocked request (including complete URLs) are also
-written to `data/security.log` with lines starting with `[AUTO-BLOCKED]`.
+Debug mode adds detailed instrumentation (every network request, response
+statuses, page navigations, per-candidate timing). Normal runs are unaffected.
 
-### Deciding what's "stream infrastructure" vs. an ad
+### The recovery dialog
 
-The `ref=` column is your best evidence — it shows *which page* requested the
-blocked domain:
+When every stream source fails, the app normally shows "Could not connect to
+server." In a debug run, a recovery dialog may appear instead, listing domains
+that were blocked while the player loaded:
 
-- `ref=dlive.sx` (or another core stream-site domain) means the request came
-  from the outer player page — the source's own ad and tracking scripts.
-  **Leave these blocked.**
-- `ref=iplayer.is` or `ref=<some obfuscated domain>` means the request came
-  from inside the player chain itself (iframes, the video player, token
-  handshakes). If playback is failing, these are your whitelist candidates —
-  add the domain to `safeDomains`.
+- `chain` — strong evidence this domain is part of the player; pre-selected.
+- `chain?` — possibly part of the player; your call.
+- `likely ad` — almost certainly an ad; left unselected.
 
-Domains also fall into two rough categories by appearance:
-
-- **Ads and trackers** — often random-looking domains ending in `.com`,
-  `.xyz`, `.site`, `.space`, or `.online`, frequently serving `.js`, `.css`,
-  or tracking `xhr`/`ping` requests.
-- **Stream infrastructure** — often served from CDNs or domains that appear
-  alongside actual video playback (HLS manifests, segments, encryption keys).
-
-If you're unsure, err on the side of leaving a domain blocked, and add it
-only if playback is failing and the domain appears in the block list at the
-same moment. When in doubt, add one domain at a time and retest.
+Click **Test selected** to try the checked set. If playback recovers, the
+domains are saved on your machine and you're shown a short snippet to share
+with the maintainer. Failed guesses are remembered and won't be repeated.
+The app never changes the shared configuration by itself.
 
 ## Build
 
@@ -242,15 +182,11 @@ npm install             # first run only
 npm run package         # macOS (.dmg)
 npm run package:win     # Windows (.zip)
 npm run package:linux   # Linux (.tar.gz)
+npm run package:all     # all platforms, in order
 ```
 
-Output goes to `dist/`.
-
-**Packaging note:** the packaged app must include `src/preload.js` (the
-renderer-to-main IPC bridge). If it is missing, the app will still launch,
-but silently fall back to a degraded mode with no remote config and no
-stream status updates. Verify the packager copies `src/` alongside
-`main.js`.
+Output goes to `dist/` (not part of the repository; attach the artifacts to a
+GitHub Release to distribute them).
 
 ## Contributing
 
