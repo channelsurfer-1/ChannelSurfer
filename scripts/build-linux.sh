@@ -13,10 +13,10 @@ rm -rf dist/ChannelSurfer-linux-arm64 2>/dev/null
 npm install --no-audit --no-fund
 
 # Fetch fresh EPG data
-node src/fetchEpg.js
+node src/fetchEpg.js || { echo "EPG fetch failed — aborting build"; exit 1; }
 
 # Generate schedule data
-node src/generateScheduleJson.js
+node src/generateScheduleJson.js || { echo "Schedule generation failed — aborting build"; exit 1; }
 
 # Stage images/ for packaging, excluding local-only content
 echo "Staging images..."
