@@ -2,8 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file:; style-src 'self' 'unsafe-inline' file:; img-src 'self' file: app: data:; connect-src 'self' file:;">
   <title>ChannelSurfer</title>
   <link rel="stylesheet" href="style.css">
+<base target="_blank">
 </head>
 <body>
   <div id="top-bar">
@@ -11,22 +13,22 @@
       <img src="app://icon-32.png" alt="" class="app-icon">
       <span id="app-title">ChannelSurfer</span>
     </div>
-    
+
     <div id="top-bar-right">
       <!-- Mode selector -->
       <div id="mode-selector">
-        <button class="mode-button active" data-mode="single" title="Single View" onclick="setViewMode('single')">
+        <button class="mode-button active" data-mode="single" title="Single View">
           <svg width="20" height="20" viewBox="0 0 16 16">
             <rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/>
           </svg>
         </button>
-        <button class="mode-button" data-mode="split" title="Split View" onclick="setViewMode('split')">
+        <button class="mode-button" data-mode="split" title="Split View">
           <svg width="20" height="20" viewBox="0 0 16 16">
             <rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/>
             <line x1="8" y1="2" x2="8" y2="14" stroke="currentColor" stroke-width="1.5"/>
           </svg>
         </button>
-        <button class="mode-button" data-mode="quad" title="Quad View" onclick="setViewMode('quad')">
+        <button class="mode-button" data-mode="quad" title="Quad View">
           <svg width="20" height="20" viewBox="0 0 16 16">
             <rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/>
             <line x1="8" y1="2" x2="8" y2="14" stroke="currentColor" stroke-width="1.5"/>

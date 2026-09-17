@@ -24,21 +24,86 @@ let scheduleScrollPositions = {
 };
 
 const BASE_STREAM_URL_FALLBACK = 'https://dlive.sx/stream/stream-';
-const STREAM_ATTEMPT_TIMEOUT_MS = 20000;
+const STREAM_ATTEMPT_TIMEOUT_MS = 5000;
 
 let streamBaseUrls = [BASE_STREAM_URL_FALLBACK];
 const streamAttempts = new Map();
 
+if (!document.getElementById('connecting-dots-style')) {
+  const style = document.createElement('style');
+  style.id = 'connecting-dots-style';
+  style.textContent = `
+    @keyframes dots-blink {
+      0%, 100% { opacity: 1; }
+      50%      { opacity: 0; }
+    }
+    .connecting-dots {
+      animation: dots-blink 1s ease-in-out infinite;
+    }
+    .pane-mode-content {
+      display: none;
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    .pane-mode-content.active {
+      display: block;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 function sendIpc(channel, payload) {
   try {
-    const { ipcRenderer } = require('electron');
-    ipcRenderer.send(channel, payload);
+    if (window.channelSurfer) {
+      window.channelSurfer.send(channel, payload);
+    }
   } catch (_) {}
 }
 
 function logToMain(message) {
   sendIpc('renderer-log', message);
 }
+
+// ---------- Per-mode pane content ----------
+
+function getPaneWrapper(pane, mode, createIfMissing) {
+  const selector = ':scope > .pane-mode-content[data-mode="' + mode + '"]';
+  let wrapper = pane.querySelector(selector);
+  if (!wrapper && createIfMissing) {
+    wrapper = document.createElement('div');
+    wrapper.className = 'pane-mode-content';
+    wrapper.dataset.mode = mode;
+    pane.appendChild(wrapper);
+  }
+  return wrapper;
+}
+
+function setWrapperAudioMuted(wrapper, muted) {
+  try {
+    const wv = wrapper.querySelector('webview');
+    if (wv) wv.setAudioMuted(muted);
+  } catch (_) {}
+}
+
+function ensurePlaceholder(wrapper, pane, paneIndex) {
+  if (!wrapper.querySelector('.pane-placeholder')) {
+    const placeholder = document.createElement('div');
+    placeholder.className = 'pane-placeholder';
+    placeholder.textContent = 'Click to select a program';
+    wrapper.appendChild(placeholder);
+  }
+  if (!wrapper.dataset.clickBound) {
+    wrapper.dataset.clickBound = '1';
+    wrapper.addEventListener('click', () => {
+      if (viewStates[currentViewMode][paneIndex]) return;
+      if (wrapper.querySelector('.pane-schedule-overlay')) return;
+      showScheduleOverlay(pane, paneIndex, null);
+    });
+  }
+}
+
+// ---------- End per-mode pane content ----------
 
 function updateModeButtonIcons() {
   const singleBtn = document.querySelector('[data-mode="single"]');
@@ -53,7 +118,7 @@ function updateModeButtonIcons() {
   if (splitBtn) {
     const leftFilled = viewStates.split[0] !== null;
     const rightFilled = viewStates.split[1] !== null;
-    
+
     splitBtn.innerHTML = `
       <svg width="20" height="20" viewBox="0 0 16 16">
         <rect x="2" y="2" width="6" height="12" fill="${leftFilled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5"/>
@@ -67,7 +132,7 @@ function updateModeButtonIcons() {
     const q2Filled = viewStates.quad[1] !== null;
     const q3Filled = viewStates.quad[2] !== null;
     const q4Filled = viewStates.quad[3] !== null;
-    
+
     quadBtn.innerHTML = `
       <svg width="20" height="20" viewBox="0 0 16 16">
         <rect x="2" y="2" width="6" height="6" fill="${q1Filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5"/>
@@ -91,13 +156,6 @@ window.setViewMode = function(mode) {
   panesContainer.classList.remove('panes-single', 'panes-split', 'panes-quad');
   panesContainer.classList.add(`panes-${mode}`);
 
-  const maxPanes = getMaxPanes();
-  const allPanes = panesContainer.querySelectorAll('.view-pane');
-  allPanes.forEach((pane, index) => {
-    pane.style.display = index < maxPanes ? 'block' : 'none';
-  });
-
-  updateModeButtonIcons();
   renderView();
 };
 
@@ -113,8 +171,8 @@ function extractChannelId(url) {
 function createWebview(title, url) {
   const webview = document.createElement('webview');
   webview.src = url;
-  webview.useragent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36';
   webview.setAttribute('allowfullscreen', 'true');
+  webview.setAttribute('webpreferences', 'webSecurity=no');
   webview.dataset.title = title;
   webview.dataset.channelId = extractChannelId(url) || '';
 
@@ -139,7 +197,7 @@ function createWebview(title, url) {
   return webview;
 }
 
-function attachPaneLabel(pane, stationName, programTitle) {
+function attachPaneLabel(wrapper, stationName, programTitle) {
   const label = document.createElement('div');
   label.className = 'pane-label';
 
@@ -157,13 +215,13 @@ function attachPaneLabel(pane, stationName, programTitle) {
 
   label.appendChild(logoImg);
   label.appendChild(labelText);
-  pane.appendChild(label);
+  wrapper.appendChild(label);
 }
 
 // ---------- Stream attempt failover ----------
 
-function cancelStreamAttempt(pane) {
-  const attempt = streamAttempts.get(pane);
+function cancelStreamAttempt(wrapper) {
+  const attempt = streamAttempts.get(wrapper);
   if (!attempt) return;
   attempt.cancelled = true;
   if (attempt.timer) {
@@ -182,21 +240,22 @@ function cancelStreamAttempt(pane) {
     attempt.indicator.remove();
     attempt.indicator = null;
   }
-  streamAttempts.delete(pane);
+  streamAttempts.delete(wrapper);
 }
 
 function cancelAllStreamAttempts() {
-  for (const pane of Array.from(streamAttempts.keys())) {
-    cancelStreamAttempt(pane);
+  for (const wrapper of Array.from(streamAttempts.keys())) {
+    cancelStreamAttempt(wrapper);
   }
 }
 
 function attemptStream(pane, paneIndex, stationName, dlhdId, programTitle) {
-  cancelStreamAttempt(pane);
-  pane.innerHTML = '';
-  pane.style.position = 'relative';
+  const wrapper = getPaneWrapper(pane, currentViewMode, true);
+  cancelStreamAttempt(wrapper);
+  wrapper.innerHTML = '';
 
   const attempt = {
+    wrapper: wrapper,
     pane: pane,
     paneIndex: paneIndex,
     stationName: stationName,
@@ -212,9 +271,9 @@ function attemptStream(pane, paneIndex, stationName, dlhdId, programTitle) {
     candidateStartTime: null
   };
 
-  streamAttempts.set(pane, attempt);
+  streamAttempts.set(wrapper, attempt);
   runStreamAttempt(attempt);
-  addPaneCloseButton(pane, paneIndex);
+  addPaneCloseButton(wrapper, pane, paneIndex);
 }
 
 function runStreamAttempt(attempt) {
@@ -233,7 +292,7 @@ function runStreamAttempt(attempt) {
   const webview = createWebview(attempt.stationName, url);
   webview.style.visibility = 'hidden';
   attempt.webview = webview;
-  attempt.pane.appendChild(webview);
+  attempt.wrapper.appendChild(webview);
 
   const indicator = document.createElement('div');
   indicator.style.position = 'absolute';
@@ -248,9 +307,15 @@ function runStreamAttempt(attempt) {
   indicator.style.color = '#eee';
   indicator.style.fontSize = '1rem';
   indicator.style.zIndex = '100';
-  indicator.textContent = `Connecting… trying server ${attempt.candidateIndex + 1} of ${streamBaseUrls.length}`;
+  const labelSpan = document.createElement('span');
+  labelSpan.textContent = 'Connecting';
+  const dotsSpan = document.createElement('span');
+  dotsSpan.className = 'connecting-dots';
+  dotsSpan.textContent = '...';
+  labelSpan.appendChild(dotsSpan);
+  indicator.appendChild(labelSpan);
   attempt.indicator = indicator;
-  attempt.pane.appendChild(indicator);
+  attempt.wrapper.appendChild(indicator);
 
   const thisWebview = webview;
 
@@ -268,6 +333,11 @@ function runStreamAttempt(attempt) {
     if (!e.isMainFrame) return;
     if (e.errorCode === -3) return; // ERR_ABORTED
     advanceStreamAttempt(attempt);
+  });
+
+  webview.addEventListener('console-message', (e) => {
+    if (attempt.cancelled || attempt.webview !== thisWebview) return;
+    if (e.level >= 2) logToMain('[WV:' + attempt.dlhdId + '] ' + e.message);
   });
 
   attempt.timer = setTimeout(() => {
@@ -306,7 +376,7 @@ function advanceStreamAttempt(attempt) {
 }
 
 function succeedStreamAttempt(attempt) {
-  streamAttempts.delete(attempt.pane);
+  streamAttempts.delete(attempt.wrapper);
 
   const elapsed = attempt.candidateStartTime
     ? ((Date.now() - attempt.candidateStartTime) / 1000).toFixed(1)
@@ -329,12 +399,12 @@ function succeedStreamAttempt(attempt) {
     attempt.webview.style.visibility = '';
   }
   if (attempt.programTitle) {
-    attachPaneLabel(attempt.pane, attempt.stationName, attempt.programTitle);
+    attachPaneLabel(attempt.wrapper, attempt.stationName, attempt.programTitle);
   }
 }
 
 function failStreamAttempt(attempt) {
-  streamAttempts.delete(attempt.pane);
+  streamAttempts.delete(attempt.wrapper);
 
   const elapsed = attempt.overallStartTime
     ? ((Date.now() - attempt.overallStartTime) / 1000).toFixed(1)
@@ -351,6 +421,7 @@ function failStreamAttempt(attempt) {
   }
 
   const failure = document.createElement('div');
+  failure.className = 'pane-failure';
   failure.style.position = 'absolute';
   failure.style.top = '0';
   failure.style.left = '0';
@@ -364,19 +435,31 @@ function failStreamAttempt(attempt) {
   failure.style.fontSize = '1rem';
   failure.style.textAlign = 'center';
   failure.style.padding = '20px';
-  failure.textContent = 'Could not connect to stream. All servers failed.';
-  attempt.pane.appendChild(failure);
+  failure.textContent = 'Could not connect to server.';
+  attempt.wrapper.appendChild(failure);
 }
 
 // ---------- End stream attempt failover ----------
 
 function showTooltip(e) {
-  const text = e.currentTarget.dataset.tooltip;
-  if (!text) return;
+  const title = e.currentTarget.dataset.tooltipTitle;
+  const desc = e.currentTarget.dataset.tooltipDesc;
+  if (!title && !desc) return;
 
   tooltipTimer = setTimeout(() => {
     const tooltip = document.getElementById('tooltip');
-    tooltip.innerHTML = text;
+    tooltip.textContent = '';
+    if (title) {
+      const strong = document.createElement('strong');
+      strong.textContent = title;
+      tooltip.appendChild(strong);
+      if (desc) {
+        tooltip.appendChild(document.createElement('br'));
+      }
+    }
+    if (desc) {
+      tooltip.appendChild(document.createTextNode(desc));
+    }
     tooltip.style.display = 'block';
     moveTooltip(e);
   }, 500);
@@ -465,14 +548,14 @@ function scheduleProgramTimer(dlhdId) {
 function updatePaneLabel(dlhdId, programName) {
   const panesContainer = document.getElementById('panes-container');
   const allPanes = panesContainer.querySelectorAll('.view-pane');
-  const maxPanes = getMaxPanes();
   const viewState = viewStates[currentViewMode];
 
   viewState.forEach((program, index) => {
     if (program && program.dlhdId === dlhdId) {
       const pane = allPanes[index];
-      if (pane) {
-        const existingLabel = pane.querySelector('.pane-label');
+      const wrapper = pane ? getPaneWrapper(pane, currentViewMode, false) : null;
+      if (wrapper) {
+        const existingLabel = wrapper.querySelector('.pane-label');
         if (existingLabel) existingLabel.remove();
 
         const label = document.createElement('div');
@@ -492,7 +575,7 @@ function updatePaneLabel(dlhdId, programName) {
 
         label.appendChild(logoImg);
         label.appendChild(labelText);
-        pane.appendChild(label);
+        wrapper.appendChild(label);
       }
     }
   });
@@ -504,52 +587,48 @@ function renderView() {
   const maxPanes = getMaxPanes();
   const viewState = viewStates[currentViewMode];
 
-  cancelAllStreamAttempts();
-
   allPanes.forEach((pane, index) => {
     pane.style.display = index < maxPanes ? 'block' : 'none';
   });
 
-  allPanes.forEach((pane, index) => {
-    if (index < maxPanes) {
-      pane.innerHTML = '';
-      pane.onclick = null;
+  for (let index = 0; index < maxPanes; index++) {
+    const pane = allPanes[index];
+    if (!pane) continue;
+    const program = viewState[index];
+    const wrapper = getPaneWrapper(pane, currentViewMode, true);
+
+    if (program) {
+      const attempt = streamAttempts.get(wrapper);
+      const hasWebview = !!wrapper.querySelector('webview');
+      if (!attempt && !hasWebview) {
+        attemptStream(pane, index, program.stationName, program.dlhdId, program.programName);
+      }
+    } else {
+      ensurePlaceholder(wrapper, pane, index);
     }
+  }
+
+  allPanes.forEach((pane, index) => {
+    const isVisible = index < maxPanes;
+    pane.querySelectorAll(':scope > .pane-mode-content').forEach(w => {
+      const active = isVisible && w.dataset.mode === currentViewMode;
+      w.classList.toggle('active', active);
+      setWrapperAudioMuted(w, !active);
+    });
   });
 
   if (currentViewMode === 'single' && !viewState[0] && scheduleData) {
-    const singlePane = allPanes[0];
-    if (singlePane) {
-      showScheduleOverlay(singlePane, 0, null);
-    }
+    showScheduleOverlay(allPanes[0], 0, null);
     updateModeButtonIcons();
     return;
   }
 
-  viewState.forEach((program, index) => {
-    if (index >= maxPanes) return;
-
-    const pane = allPanes[index];
-    if (!pane) return;
-
-    if (program) {
-      attemptStream(pane, index, program.stationName, program.dlhdId, program.programName);
-    } else {
-      const placeholder = document.createElement('div');
-      placeholder.className = 'pane-placeholder';
-      placeholder.textContent = 'Click to select a program';
-      pane.appendChild(placeholder);
-
-      pane.addEventListener('click', () => {
-        showScheduleOverlay(pane, index, null);
-      });
-    }
-  });
-
   scheduleOverlayStates[currentViewMode].forEach((isOpen, index) => {
     if (isOpen && index < maxPanes) {
       const pane = allPanes[index];
-      if (pane && !pane.querySelector('.pane-schedule-overlay')) {
+      if (!pane) return;
+      const wrapper = getPaneWrapper(pane, currentViewMode, false);
+      if (wrapper && !wrapper.querySelector('.pane-schedule-overlay')) {
         showScheduleOverlay(pane, index, viewState[index] || null);
       }
     }
@@ -559,66 +638,62 @@ function renderView() {
 }
 
 function showScheduleOverlay(pane, paneIndex, existingProgram) {
-  const allPanes = document.querySelectorAll('.view-pane');
-  
+  const panesContainer = document.getElementById('panes-container');
+  const allPanes = panesContainer.querySelectorAll('.view-pane');
+  const maxPanes = getMaxPanes();
+
   allPanes.forEach((otherPane, index) => {
-    if (otherPane !== pane) {
-      const otherOverlay = otherPane.querySelector('.pane-schedule-overlay');
-      if (otherOverlay) {
-        const otherListContainer = otherOverlay.querySelector('.pane-schedule-list');
-        if (otherListContainer) {
-          scheduleScrollPositions[currentViewMode][index] = otherListContainer.scrollTop;
+    if (otherPane === pane || index >= maxPanes) return;
+    const otherWrapper = getPaneWrapper(otherPane, currentViewMode, false);
+    if (!otherWrapper) return;
+
+    const otherOverlay = otherWrapper.querySelector('.pane-schedule-overlay');
+    if (otherOverlay) {
+      const otherListContainer = otherOverlay.querySelector('.pane-schedule-list');
+      if (otherListContainer) {
+        scheduleScrollPositions[currentViewMode][index] = otherListContainer.scrollTop;
+      }
+
+      otherOverlay.remove();
+      scheduleOverlayStates[currentViewMode][index] = false;
+
+      const otherProgram = viewStates[currentViewMode][index];
+      if (otherProgram) {
+        const existingWebview = otherWrapper.querySelector('webview');
+        if (existingWebview) {
+          existingWebview.style.display = '';
         }
-        
-        otherOverlay.remove();
-        scheduleOverlayStates[currentViewMode][index] = false;
-        
-        const otherProgram = viewStates[currentViewMode][index];
-        if (otherProgram) {
-          const existingWebview = otherPane.querySelector('webview');
-          if (existingWebview) {
-            existingWebview.style.display = '';
-          }
-          
-          if (!otherPane.querySelector('.pane-label') && otherProgram.programName) {
-            const label = document.createElement('div');
-            label.className = 'pane-label';
 
-            const logoImg = document.createElement('img');
-            logoImg.className = 'pane-label-logo';
-            const logoFileName = otherProgram.stationName.replace(/ USA$/i, '').trim();
-            logoImg.src = `../images/logos/badges/${encodeURIComponent(logoFileName)}.png`;
-            logoImg.onerror = function() {
-              this.style.display = 'none';
-            };
+        if (!otherWrapper.querySelector('.pane-label') && otherProgram.programName) {
+          const label = document.createElement('div');
+          label.className = 'pane-label';
 
-            const labelText = document.createElement('span');
-            labelText.className = 'pane-label-text';
-            labelText.textContent = otherProgram.programName;
+          const logoImg = document.createElement('img');
+          logoImg.className = 'pane-label-logo';
+          const logoFileName = otherProgram.stationName.replace(/ USA$/i, '').trim();
+          logoImg.src = `../images/logos/badges/${encodeURIComponent(logoFileName)}.png`;
+          logoImg.onerror = function() {
+            this.style.display = 'none';
+          };
 
-            label.appendChild(logoImg);
-            label.appendChild(labelText);
-            otherPane.appendChild(label);
-          }
-        } else {
-          if (!otherPane.querySelector('.pane-placeholder')) {
-            const placeholder = document.createElement('div');
-            placeholder.className = 'pane-placeholder';
-            placeholder.textContent = 'Click to select a program';
-            otherPane.appendChild(placeholder);
+          const labelText = document.createElement('span');
+          labelText.className = 'pane-label-text';
+          labelText.textContent = otherProgram.programName;
 
-            otherPane.addEventListener('click', () => {
-              showScheduleOverlay(otherPane, index, null);
-            });
-          }
+          label.appendChild(logoImg);
+          label.appendChild(labelText);
+          otherWrapper.appendChild(label);
         }
+      } else {
+        ensurePlaceholder(otherWrapper, otherPane, index);
       }
     }
   });
 
+  const wrapper = getPaneWrapper(pane, currentViewMode, true);
   scheduleOverlayStates[currentViewMode][paneIndex] = true;
 
-  const existingOverlay = pane.querySelector('.pane-schedule-overlay');
+  const existingOverlay = wrapper.querySelector('.pane-schedule-overlay');
   if (existingOverlay) {
     const existingListContainer = existingOverlay.querySelector('.pane-schedule-list');
     if (existingListContainer) {
@@ -649,12 +724,12 @@ function showScheduleOverlay(pane, paneIndex, existingProgram) {
   listContainer.className = 'pane-schedule-list';
   overlay.appendChild(listContainer);
 
-  pane.appendChild(overlay);
+  wrapper.appendChild(overlay);
 
   populateScheduleList(listContainer, pane, paneIndex);
-  
+
   listContainer.scrollTop = scheduleScrollPositions[currentViewMode][paneIndex] || 0;
-  
+
   updateModeButtonIcons();
 }
 
@@ -674,7 +749,7 @@ function populateScheduleList(listContainer, pane, paneIndex) {
     stationSpan.style.width = stationColumnWidth + '%';
     stationSpan.style.minWidth = stationColumnWidth + '%';
     const displayName = stationName.replace(/ USA$/i, '').trim();
-    
+
     const logoImg = document.createElement('img');
     logoImg.className = 'pane-schedule-logo';
     const logoFileName = stationName.replace(/ USA$/i, '').trim();
@@ -683,14 +758,14 @@ function populateScheduleList(listContainer, pane, paneIndex) {
     logoImg.onerror = function() {
       this.style.display = 'none';
     };
-    
+
     stationSpan.appendChild(logoImg);
-    
+
     const stationText = document.createElement('span');
     stationText.className = 'pane-schedule-station-text';
     stationText.textContent = displayName;
     stationSpan.appendChild(stationText);
-    
+
     row.appendChild(stationSpan);
 
     const stationResizer = document.createElement('div');
@@ -724,25 +799,22 @@ function populateScheduleList(listContainer, pane, paneIndex) {
 
     row.appendChild(programSpan);
 
-    const fullTooltip = programTitle
-      ? `<strong>${programTitle}</strong><br>${programDescription}`
-      : programDescription;
-
-    row.dataset.tooltip = fullTooltip;
+    row.dataset.tooltipTitle = programTitle;
+    row.dataset.tooltipDesc = programDescription;
     row.addEventListener('mouseenter', showTooltip);
     row.addEventListener('mousemove', moveTooltip);
     row.addEventListener('mouseleave', hideTooltip);
 
     row.addEventListener('click', (e) => {
       if (isResizingColumn) return;
-      
+
       e.stopPropagation();
 
       hideTooltip();
 
-      const listContainer = pane.querySelector('.pane-schedule-list');
-      if (listContainer) {
-        scheduleScrollPositions[currentViewMode][paneIndex] = listContainer.scrollTop;
+      const currentList = pane.querySelector('.pane-schedule-list');
+      if (currentList) {
+        scheduleScrollPositions[currentViewMode][paneIndex] = currentList.scrollTop;
       }
 
       viewStates[currentViewMode][paneIndex] = {
@@ -764,7 +836,7 @@ function populateScheduleList(listContainer, pane, paneIndex) {
   });
 }
 
-function addPaneCloseButton(pane, paneIndex) {
+function addPaneCloseButton(wrapper, pane, paneIndex) {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'pane-close-btn';
   closeBtn.innerHTML = '&times;';
@@ -772,23 +844,27 @@ function addPaneCloseButton(pane, paneIndex) {
 
   closeBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    
-    cancelStreamAttempt(pane);
+
+    cancelStreamAttempt(wrapper);
 
     viewStates[currentViewMode][paneIndex] = null;
     scheduleOverlayStates[currentViewMode][paneIndex] = false;
     updateModeButtonIcons();
-    
-    pane.innerHTML = '';
-    
+
+    wrapper.innerHTML = '';
+
     showScheduleOverlay(pane, paneIndex, null);
   });
 
-  pane.appendChild(closeBtn);
+  wrapper.appendChild(closeBtn);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   let schedulePath = '../data/schedule.json';
+
+  document.querySelectorAll('.mode-button').forEach(btn => {
+    btn.addEventListener('click', () => setViewMode(btn.dataset.mode));
+  });
 
   document.addEventListener('click', (e) => {
     if (isResizingColumn) {
@@ -837,13 +913,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  function decodeEntities(str) {
-    if (!str) return '';
-    const textarea = document.createElement('textarea');
-    textarea.innerHTML = str;
-    return textarea.value;
-  }
-
   async function loadSchedule() {
     try {
       const cacheBuster = `?_=${Date.now()}`;
@@ -853,13 +922,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const data = await response.json();
       scheduleData = data;
-      
+
       scheduleScrollPositions = {
         single: [0],
         split: [0, 0],
         quad: [0, 0, 0, 0]
       };
-      
+
       Object.values(viewStates).forEach(state => {
         state.forEach(program => {
           if (program) {
@@ -871,8 +940,9 @@ document.addEventListener('DOMContentLoaded', () => {
       updateModeButtonIcons();
       renderView();
       try {
-        const { ipcRenderer } = require('electron');
-        ipcRenderer.send('schedule-rendered');
+        if (window.channelSurfer) {
+          window.channelSurfer.send('schedule-rendered');
+        }
       } catch (_) {}
     } catch (err) {
 
@@ -912,11 +982,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const openOverlay = document.querySelector('.pane-schedule-overlay');
     if (!openOverlay) return;
 
-    const listContainer = openOverlay.querySelector('.pane-schedule-list');
-    const pane = openOverlay.parentElement;
-    const paneIndex = Array.from(pane.parentElement.children).indexOf(pane);
+    const wrapper = openOverlay.parentElement;
+    const pane = wrapper ? wrapper.parentElement : null;
+    if (!pane) return;
 
-    if (listContainer && pane && paneIndex !== -1) {
+    const panesContainer = document.getElementById('panes-container');
+    const paneIndex = Array.from(panesContainer.querySelectorAll('.view-pane')).indexOf(pane);
+
+    const listContainer = openOverlay.querySelector('.pane-schedule-list');
+
+    if (listContainer && paneIndex !== -1) {
       const scrollPos = listContainer.scrollTop;
       listContainer.innerHTML = '';
       populateScheduleList(listContainer, pane, paneIndex);
@@ -924,19 +999,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  try {
-    const { ipcRenderer } = require('electron');
-    ipcRenderer.invoke('get-schedule-path').then((p) => {
+  if (window.channelSurfer) {
+    window.channelSurfer.invoke('get-schedule-path').then((p) => {
       if (p) schedulePath = p;
       loadSchedule();
     });
-    ipcRenderer.invoke('get-stream-base-urls').then((urls) => {
+    window.channelSurfer.invoke('get-stream-base-urls').then((urls) => {
       if (Array.isArray(urls) && urls.length > 0) {
         streamBaseUrls = urls;
       }
     }).catch(() => {});
 
-    ipcRenderer.on('stream-attempt-success', (event, payload) => {
+    window.channelSurfer.onStreamSuccess((payload) => {
       if (!payload || typeof payload.webContentsId !== 'number') return;
       for (const attempt of streamAttempts.values()) {
         if (attempt.webContentsId === payload.webContentsId) {
@@ -945,7 +1019,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
     });
-  } catch (_) {
+  } else {
     loadSchedule();
   }
 

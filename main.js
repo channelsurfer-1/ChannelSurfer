@@ -1,3 +1,5 @@
+process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
+
 const { app } = require('electron');
 
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
@@ -8,7 +10,8 @@ const fs = require('fs');
 
 app.commandLine.appendSwitch('log-level', '3');
 app.commandLine.appendSwitch('disable-logging');
-app.commandLine.appendSwitch('disable-webrtc');
+// app.commandLine.appendSwitch('disable-webrtc');
+app.commandLine.appendSwitch('user-agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36');
 
 let win = null;
 let windowCreated = false;
@@ -16,6 +19,17 @@ let schedulePath = '';
 let blockedDomainsLogged = new Set();
 let streamPlayerDomains = new Set();
 const trackedStreamWebviews = new Set();
+
+// ---------- Logging ----------
+function log(category, message) {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  const tag = `[${hh}:${mm}:${ss}] [${category.padEnd(6)}]`;
+  console.log(`${tag} ${message}`);
+}
+// ---------- End logging ----------
 
 // ---------- Remote config ----------
 const CONFIG_URL = 'https://gist.githubusercontent.com/channelsurfer-1/cf46021791c0140d8321675b2fcead7b/raw/config.json';
@@ -31,18 +45,7 @@ const BASELINE_CONFIG = {
   safeDomains: [
     'dlhd.st',
     'dlstreams.st',
-    'dlive.sx',
-    'hamis.romponalis.st',
-    'xameleon.phantemlis.top',
-    'r2.cloudflarestorage.com',
-    'cdn.jsdelivr.net',
-    'ann.cdn-lab.shop',
-    'dromlis.vmalplapis.cfd',
-    'vmalplapis.cfd',
-    'gomis.phzampelis.cfd',
-    'tiestep.top',
-    '7odxv0l067ka.net',
-    'assetrage.net'
+    'dlive.sx'
   ]
 };
 
@@ -65,7 +68,7 @@ async function fetchWithTimeout(url, ms) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), ms);
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(`${url}?_=${Date.now()}`, { signal: controller.signal });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     return await res.json();
   } finally {
@@ -80,7 +83,7 @@ function readCachedConfig() {
     const raw = fs.readFileSync(p, 'utf8');
     return validateConfig(JSON.parse(raw));
   } catch (err) {
-    console.error('Config: failed to read cache:', err.message);
+    log('ERROR', 'Failed to read config cache: ' + err.message);
     return null;
   }
 }
@@ -91,7 +94,7 @@ function writeCachedConfig(config) {
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.writeFileSync(p, JSON.stringify(config, null, 2), 'utf8');
   } catch (err) {
-    console.error('Config: failed to write cache:', err.message);
+    log('ERROR', 'Failed to write config cache: ' + err.message);
   }
 }
 
@@ -100,22 +103,22 @@ async function loadConfig() {
     const remote = await fetchWithTimeout(CONFIG_URL, CONFIG_FETCH_TIMEOUT_MS);
     const validated = validateConfig(remote);
     if (validated) {
-      console.log('Config: loaded from remote');
+      log('CONFIG', 'Loaded from remote');
       writeCachedConfig(validated);
       return validated;
     }
-    console.warn('Config: remote payload invalid, ignoring');
+    log('WARN', 'Remote config payload invalid, ignoring');
   } catch (err) {
-    console.warn('Config: remote fetch failed:', err.message);
+    log('WARN', 'Remote config fetch failed: ' + err.message);
   }
 
   const cached = readCachedConfig();
   if (cached) {
-    console.log('Config: loaded from cache');
+    log('CONFIG', 'Loaded from cache');
     return cached;
   }
 
-  console.log('Config: using hardcoded baseline');
+  log('CONFIG', 'Using hardcoded baseline');
   return BASELINE_CONFIG;
 }
 // ---------- End remote config ----------
@@ -124,11 +127,11 @@ function getSecurityLogPath() {
   const dataDir = app.isPackaged
     ? app.getPath('userData')
     : path.join(__dirname, 'data');
-  
+
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
   }
-  
+
   return path.join(dataDir, 'security.log');
 }
 
@@ -136,9 +139,9 @@ function resetSecurityLog() {
   try {
     const logPath = getSecurityLogPath();
     fs.writeFileSync(logPath, '');
-    console.log('Security log reset.');
+    log('START', 'Security log reset');
   } catch (err) {
-    console.error('Failed to reset security log:', err.message);
+    log('ERROR', 'Failed to reset security log: ' + err.message);
   }
 }
 
@@ -148,12 +151,17 @@ function writeSecurityLog(entry) {
     const line = `${new Date().toISOString()} ${entry}\n`;
     fs.appendFileSync(logPath, line);
   } catch (err) {
-    console.error('Failed to write security log:', err.message);
+    log('ERROR', 'Failed to write security log: ' + err.message);
   }
 }
 
 function isStreamPlayerPage(url) {
-  return (url.includes('/stream/stream-') || url.includes('/watch/stream-')) && url.endsWith('.php');
+  try {
+    const pathname = new URL(url).pathname;
+    return (pathname.includes('/stream/stream-') || pathname.includes('/watch/stream-')) && pathname.endsWith('.php');
+  } catch (_) {
+    return false;
+  }
 }
 
 function isStreamingContent(url) {
@@ -168,7 +176,7 @@ function isSafeDomain(url) {
   if (isStreamPlayerPage(url) || isStreamingContent(url)) {
     return true;
   }
-  
+
   try {
     const hostname = new URL(url).hostname.toLowerCase();
 
@@ -177,7 +185,7 @@ function isSafeDomain(url) {
         return true;
       }
     }
-    
+
     if (streamPlayerDomains.has(hostname)) {
       return true;
     }
@@ -193,11 +201,11 @@ function generateSchedule() {
   return fetchEpg()
     .then(() => {
       schedulePath = generateScheduleJson();
-      console.log('Schedule regenerated at', new Date().toISOString());
+      log('EPG', 'Schedule regenerated');
       return schedulePath;
     })
     .catch(err => {
-      console.error('Schedule regeneration failed:', err.message);
+      log('ERROR', 'Schedule regeneration failed: ' + err.message);
       return schedulePath;
     });
 }
@@ -214,12 +222,12 @@ function scheduleHalfHourRegeneration() {
 
   setTimeout(() => {
     generateSchedule().catch(err => {
-      console.error('Scheduled regeneration failed:', err.message);
+      log('ERROR', 'Scheduled regeneration failed: ' + err.message);
     });
 
     setInterval(() => {
       generateSchedule().catch(err => {
-        console.error('Scheduled regeneration failed:', err.message);
+        log('ERROR', 'Scheduled regeneration failed: ' + err.message);
       });
     }, 30 * 60 * 1000);
   }, delay);
@@ -236,15 +244,16 @@ function createWindow() {
     show: false,
     backgroundColor: '#1a1a1a',
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'src', 'preload.js'),
       webSecurity: false,
       allowRunningInsecureContent: false,
       webviewTag: true
     }
   });
 
-  const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36';
+  const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36';
   win.webContents.setUserAgent(USER_AGENT);
 
   session.defaultSession.clearCache().catch(() => {});
@@ -255,7 +264,7 @@ function createWindow() {
       try {
         const parsed = new URL(details.url);
         const hostname = parsed.hostname.toLowerCase();
-        
+
         if (isStreamPlayerPage(details.url)) {
           streamPlayerDomains.add(hostname);
         }
@@ -268,7 +277,9 @@ function createWindow() {
         if (!blockedDomainsLogged.has(hostname)) {
           blockedDomainsLogged.add(hostname);
           const entry = `[AUTO-BLOCKED] ${hostname} ${details.resourceType} ${details.url.slice(0, 160)}`;
-          console.log(entry);
+          let refHost = '';
+          try { refHost = details.referrer ? new URL(details.referrer).hostname : ''; } catch (_) {}
+          log('BLOCK', `${(details.resourceType || 'unknown').padEnd(8)} ${hostname}${refHost ? '  ref=' + refHost : ''}`);
           writeSecurityLog(entry);
         }
 
@@ -284,27 +295,26 @@ function createWindow() {
     (details, callback) => {
       try {
         const headers = details.requestHeaders || {};
-        headers['User-Agent'] = USER_AGENT;
-        headers['sec-gpc'] = '1';
 
-        const requestUrl = details.url;
-
-        if (
-          requestUrl.includes('.m3u8') ||
-          requestUrl.includes('.ts') ||
-          requestUrl.includes('.key') ||
-          requestUrl.includes('.zst') ||
-          requestUrl.includes('.pdf') ||
-          details.resourceType === 'media'
-        ) {
-          if (!headers['Referer'] && !headers['referer']) {
-            const parsed = new URL(requestUrl);
-            headers['Referer'] = `${parsed.protocol}//${parsed.host}/`;
-          }
-        } else {
-          headers['Referer'] = 'https://dlhd.st/';
-          headers['Origin'] = 'https://dlhd.st';
+        if (details.url.includes('.m3u8')) {
+          callback({ cancel: false, requestHeaders: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Origin': 'https://tiestep.top',
+            'Referer': 'https://tiestep.top/'
+          }});
+          return;
         }
+
+        if (details.resourceType === 'mainFrame' && !headers['Referer'] && !headers['referer']) {
+          headers['Referer'] = 'https://dlhd.st/';
+        }
+
+        headers['sec-ch-ua'] = '"Google Chrome";v="153", "Not_A Brand";v="8", "Chromium";v="153"';
+        headers['sec-ch-ua-mobile'] = '?0';
+        headers['sec-ch-ua-platform'] = '"macOS"';
+        headers['Accept-Language'] = 'en-US,en;q=0.6';
+        headers['Sec-GPC'] = '1';
 
         callback({ cancel: false, requestHeaders: headers });
       } catch (err) {
@@ -312,7 +322,7 @@ function createWindow() {
       }
     }
   );
-
+        
   session.defaultSession.webRequest.onCompleted(
     { urls: ['*://*/*'] },
     (details) => {
@@ -328,20 +338,37 @@ function createWindow() {
       } catch (_) {}
     }
   );
-
-  win.webContents.setWindowOpenHandler(() => {
-    return { action: 'allow' };
-  });
-
+  
+  session.defaultSession.webRequest.onHeadersReceived(
+    { urls: ['http://*/*', 'https://*/*'] },
+    (details, callback) => {
+      try {
+        const out = {};
+        let acao = null;
+        for (const [k, v] of Object.entries(details.responseHeaders || {})) {
+          if (k.toLowerCase() === 'access-control-allow-origin') {
+            if (acao === null && Array.isArray(v) && v.length > 0) acao = v[0];
+          } else {
+            out[k] = v;
+          }
+        }
+        out['Access-Control-Allow-Origin'] = [acao || '*'];
+        callback({ cancel: false, responseHeaders: out });
+      } catch (err) {
+        callback({ cancel: false });
+      }
+    }
+  );
+  
   const targetPath = path.join(__dirname, 'public', 'index.html');
 
   win.loadFile(targetPath).catch(err => {
-    console.error('Failed to load HTML file:', err);
+    log('ERROR', 'Failed to load HTML file: ' + err.message);
   });
 
   setTimeout(() => {
     if (win && !win.isVisible()) {
-      console.warn('Schedule render timed out; showing window anyway.');
+      log('WARN', 'Schedule render timed out; showing window anyway');
       win.show();
     }
   }, 10000);
@@ -349,7 +376,7 @@ function createWindow() {
 
 ipcMain.handle('get-schedule-path', () => schedulePath);
 ipcMain.handle('get-stream-base-urls', () => {
-  console.log('Renderer requested base URLs:', activeConfig.baseStreamUrls.length, 'candidates');
+  log('CONFIG', 'Renderer requested ' + activeConfig.baseStreamUrls.length + ' base URL candidates');
   return activeConfig.baseStreamUrls;
 });
 
@@ -367,7 +394,7 @@ ipcMain.on('unregister-stream-attempt', (event, payload) => {
 
 ipcMain.on('renderer-log', (event, message) => {
   if (typeof message === 'string') {
-    console.log(message);
+    log('RENDER', message);
   }
 });
 
@@ -377,10 +404,20 @@ ipcMain.on('schedule-rendered', () => {
   }
 });
 
+app.on('web-contents-created', (event, contents) => {
+  contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  if (contents.getType() === 'webview') {
+    contents.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36');
+  }
+});
+
 app.whenReady().then(async () => {
+  session.defaultSession.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36');
+
   resetSecurityLog();
 
   activeConfig = await loadConfig();
+  log('CONFIG', 'Active safeDomains: ' + activeConfig.safeDomains.join(', '));
 
   protocol.registerFileProtocol('app', (request, callback) => {
     const url = request.url.substr(6);

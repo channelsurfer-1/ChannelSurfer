@@ -45,6 +45,7 @@ Browse current programming across all available stations.
 
 - Click an empty panel to open the program guide
 - The program guide shows program titles and descriptions (on hover)
+- Drag the divider between the Channel and Program columns to resize them
 
 ### 🖥️ Multi-View Watching
 
@@ -55,13 +56,19 @@ Watch multiple channels at once.
 - **Grid View** — Watch up to four programs concurrently
 - Individual panels expand to fullscreen when the player's fullscreen button is clicked
 
+Streams keep playing when you switch views: a panel you populated in Grid View is
+still live when you return to it — no reconnect, no "Connecting..." message.
+Panels in views you're not looking at continue playing silently in the background
+(muted). Keep in mind that every live panel consumes network bandwidth, so a
+populated Grid View running in the background still uses your connection.
+
 ### 🔄 Automatic Failover
 
 The stream source occasionally changes the domains and URL paths it uses to serve content. When this happens, ChannelSurfer tries a list of known player URLs in order and uses the first one that plays. Recovery is automatic — no action needed from the user.
 
 ### 🛡️ Built-in Protection
 
-ChannelSurfer blocks intrusive ads, trackers, and malicious domains.
+ChannelSurfer blocks intrusive ads, trackers, and malicious domains, and prevents pages from opening pop-up windows.
 
 ### 🌙 Modern Dark Interface
 
@@ -108,11 +115,11 @@ notes describing what changed.
 2. Click "Click to select a program" in any panel
 3. Browse the program guide for the program that interests you
 4. Click the program to fill that panel
-5. Switch from Single to Dual or Grid View to view more than one program at a time
+5. Switch from Single to Dual or Grid View to view more than one program at a time — populated panels resume instantly, right where they left off
 6. Closing a program returns the panel to the program guide
 
 If the primary stream URL fails, the app automatically tries alternate
-sources before giving up. A brief "Connecting… trying server N of M"
+sources before giving up. A brief "Connecting..."
 message appears in the panel during this process.
 
 ## Program Guide Accuracy
@@ -148,10 +155,13 @@ https://gist.githubusercontent.com/channelsurfer-1/cf46021791c0140d8321675b2fcea
 
 1. Remote config (the gist above)
 2. Local cache (`userData/config.json`, written whenever the remote loads successfully)
-3. Hardcoded baseline (in `main.js`)
+3. Hardcoded baseline in `main.js` — a minimal fallback containing only the
+   core stream-site domains, used only if both the remote fetch and the cache
+   fail (e.g. first launch while offline). It exists to guarantee the app
+   always starts in a valid state.
 
 If the remote fetch fails, the app falls back to the cache. If the cache is
-empty, it falls back to the baseline. The app continues to work in all cases.
+empty, it falls back to the baseline. The app continues to start in all cases.
 
 **How to update:**
 
@@ -162,9 +172,9 @@ No rebuild, no re-release, no waiting for users to update.
 
 **When to update:**
 
-- If a stream stops playing and the terminal shows `[AUTO-BLOCKED]` lines for
-  a domain that looks like stream infrastructure rather than an ad or tracker,
-  add that domain to `safeDomains`.
+- If a stream stops playing, check the terminal output for `[BLOCK]` lines
+  (see below). If a blocked domain looks like stream infrastructure rather
+  than an ad or tracker, add it to `safeDomains`.
 - If the app cannot connect to any candidate URL, inspect the stream source's
   current player URL in a browser and add or update `baseStreamUrls` accordingly.
 
@@ -179,7 +189,7 @@ The stream source occasionally refuses connections from certain IP addresses or 
 
 Try again later. The block is often temporary.
 
-### A channel opens but the pane stays blank or shows "All servers failed"
+### A channel opens but the pane stays blank or shows "Could not connect to server."
 
 The source site periodically changes both the domain names it uses to serve
 streams and the URL path of the player page itself. ChannelSurfer handles
@@ -190,15 +200,30 @@ both cases:
 - Its list of stream player URLs is also remote, and the app tries them in
   order until one works.
 
-If playback fails on all candidates, look at the terminal output (or
-`data/security.log` if running the packaged version) for lines starting with
-`[AUTO-BLOCKED]`. If any blocked domain looks like stream infrastructure
-rather than an ad or tracker, add it to `safeDomains` in the config — see
-[Configuration](#configuration).
+If playback fails on all candidates, look at the terminal output for lines
+like this:
+
+```
+[14:22:20] [BLOCK ] script   s10.histats.com  ref=dlive.sx
+```
+
+The full details of every blocked request (including complete URLs) are also
+written to `data/security.log` with lines starting with `[AUTO-BLOCKED]`.
 
 ### Deciding what's "stream infrastructure" vs. an ad
 
-Blocked domains fall into two rough categories:
+The `ref=` column is your best evidence — it shows *which page* requested the
+blocked domain:
+
+- `ref=dlive.sx` (or another core stream-site domain) means the request came
+  from the outer player page — the source's own ad and tracking scripts.
+  **Leave these blocked.**
+- `ref=iplayer.is` or `ref=<some obfuscated domain>` means the request came
+  from inside the player chain itself (iframes, the video player, token
+  handshakes). If playback is failing, these are your whitelist candidates —
+  add the domain to `safeDomains`.
+
+Domains also fall into two rough categories by appearance:
 
 - **Ads and trackers** — often random-looking domains ending in `.com`,
   `.xyz`, `.site`, `.space`, or `.online`, frequently serving `.js`, `.css`,
@@ -208,7 +233,7 @@ Blocked domains fall into two rough categories:
 
 If you're unsure, err on the side of leaving a domain blocked, and add it
 only if playback is failing and the domain appears in the block list at the
-same moment.
+same moment. When in doubt, add one domain at a time and retest.
 
 ## Build
 
@@ -221,6 +246,12 @@ npm run package:linux   # Linux (.tar.gz)
 
 Output goes to `dist/`.
 
+**Packaging note:** the packaged app must include `src/preload.js` (the
+renderer-to-main IPC bridge). If it is missing, the app will still launch,
+but silently fall back to a degraded mode with no remote config and no
+stream status updates. Verify the packager copies `src/` alongside
+`main.js`.
+
 ## Contributing
 
 Bug reports and feature requests are welcome — please [open an issue](https://github.com/channelsurfer-1/ChannelSurfer/issues).
@@ -231,7 +262,7 @@ GPL-3.0. See [LICENSE](LICENSE) for details.
 
 ## Credits
 
-Built by DeepSeek 2 (Free Edition), under the direction of Joel Budgor.
+Built by DeepSeek 2 and Kimi.ai (Free Editions), under the direction of Joel Budgor.
 Inspired by [domainus/LiveTv-English](https://github.com/domainus/LiveTv-English).
 
 ## Built With
