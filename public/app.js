@@ -30,7 +30,8 @@ let streamBaseUrls = [BASE_STREAM_URL_FALLBACK];
 const streamAttempts = new Map();
 let debugMode = false;
 const failedRecoveryCombos = new Set(); // recovery: tested-and-failed domain sets (session only)
-let pendingRecoveryTest = null;         // recovery: { key, wrapper } while a test retry is in flight
+let pendingRecoveryTest = null;         // recovery: { key, wrapper, domains } while a test retry is in flight
+let pendingPromotionView = null;        // recovery: { wrapper, domains } while main runs the 60s soak
 
 if (!document.getElementById('connecting-dots-style')) {
   const style = document.createElement('style');
@@ -405,6 +406,8 @@ function succeedStreamAttempt(attempt) {
 
   if (pendingRecoveryTest && pendingRecoveryTest.wrapper === attempt.wrapper) {
     logToMain('[RECOVERY] test PASSED, domains: ' + pendingRecoveryTest.key.split('|').join(', '));
+    pendingPromotionView = { wrapper: attempt.wrapper, domains: pendingRecoveryTest.domains };
+    sendIpc('recovery-test-result', { domains: pendingRecoveryTest.domains, passed: true });
     pendingRecoveryTest = null;
   }
 
@@ -466,7 +469,11 @@ function failStreamAttempt(attempt) {
   if (pendingRecoveryTest && pendingRecoveryTest.wrapper === attempt.wrapper) {
     failedRecoveryCombos.add(pendingRecoveryTest.key);
     logToMain('[RECOVERY] test failed, combo remembered: ' + pendingRecoveryTest.key.split('|').join(', '));
+    sendIpc('recovery-test-result', { domains: pendingRecoveryTest.domains, passed: false });
     pendingRecoveryTest = null;
+  }
+  if (pendingPromotionView && pendingPromotionView.wrapper === attempt.wrapper) {
+    pendingPromotionView = null;
   }
 
   if (isDebug()) {
@@ -486,6 +493,61 @@ function mkRecoveryBtn(label, primary) {
       ? 'background:#eee;color:#111;border:none;font-weight:600;'
       : 'background:transparent;color:#eee;border:1px solid #666;');
   return b;
+}
+
+function showRecoverySuccess(wrapper, domains) {
+  const old = wrapper.querySelector('.recovery-overlay');
+  if (old) old.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'recovery-overlay';
+  overlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(10,10,12,0.94);color:#eee;z-index:200;display:flex;align-items:center;justify-content:center;font-size:14px;';
+
+  const box = document.createElement('div');
+  box.style.cssText = 'max-width:92%;max-height:92%;overflow:auto;padding:20px 22px;';
+
+  const title = document.createElement('div');
+  title.style.cssText = 'font-size:17px;font-weight:600;color:#7d7;margin-bottom:4px;';
+  title.textContent = 'Recovered — saved locally';
+  box.appendChild(title);
+
+  const sub = document.createElement('div');
+  sub.style.cssText = 'color:#999;font-size:13px;margin-bottom:14px;';
+  sub.textContent = domains.join(', ') + ' added to local config after 60s of stable playback.';
+  box.appendChild(sub);
+
+  const snipLabel = document.createElement('div');
+  snipLabel.style.cssText = 'color:#ccc;font-size:13px;';
+  snipLabel.textContent = 'Share with other installs — add to the gist manually:';
+  box.appendChild(snipLabel);
+
+  const snippet = '// safeDomains additions — paste into gist config.json\n' + domains.map(d => '"' + d + '",').join('\n');
+  const snip = document.createElement('div');
+  snip.style.cssText = 'font-family:monospace;font-size:13px;line-height:20px;border:1px solid #444;border-radius:8px;padding:8px 12px;margin:8px 0;white-space:pre;color:#eee;';
+  snip.textContent = snippet;
+  box.appendChild(snip);
+
+  const btns = document.createElement('div');
+  btns.style.cssText = 'display:flex;gap:10px;margin-top:14px;';
+  const copyBtn = mkRecoveryBtn('Copy snippet', true);
+  const doneBtn = mkRecoveryBtn('Done', false);
+  btns.appendChild(copyBtn);
+  btns.appendChild(doneBtn);
+  box.appendChild(btns);
+
+  const note = document.createElement('div');
+  note.style.cssText = 'color:#777;font-size:12px;margin-top:12px;';
+  note.textContent = 'Local until shared — the gist update stays manual. A startup reminder lists anything local-only.';
+  box.appendChild(note);
+
+  copyBtn.addEventListener('click', () => {
+    sendIpc('copy-text', snippet);
+    copyBtn.textContent = 'Copied';
+  });
+  doneBtn.addEventListener('click', () => overlay.remove());
+
+  overlay.appendChild(box);
+  wrapper.appendChild(overlay);
 }
 
 // Opens the recovery dialog inside the failed pane. Debug-gated by the caller.
@@ -612,7 +674,7 @@ async function openRecoveryDialog(attempt) {
       diag.textContent = 'That combination already failed this session — try a different selection.';
       return;
     }
-    pendingRecoveryTest = { key, wrapper: attempt.wrapper };
+    pendingRecoveryTest = { key, wrapper: attempt.wrapper, domains: selected };
     sendIpc('allow-recovery-domains', selected);
     logToMain('[RECOVERY] testing domains: ' + selected.join(', '));
     overlay.remove();
@@ -1207,6 +1269,16 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
       }
+    });
+
+    window.channelSurfer.onRecoveryPromoted((payload) => {
+      if (!payload || !Array.isArray(payload.domains)) return;
+      if (!pendingPromotionView) return;
+      const wrapper = pendingPromotionView.wrapper;
+      const domains = payload.domains;
+      pendingPromotionView = null;
+      if (!wrapper || !wrapper.isConnected) return;
+      showRecoverySuccess(wrapper, domains);
     });
   } else {
     loadSchedule();

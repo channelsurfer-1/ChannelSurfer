@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-const SEND_ALLOWED = ['register-stream-attempt', 'unregister-stream-attempt', 'renderer-log', 'schedule-rendered', 'allow-recovery-domains'];
+const SEND_ALLOWED = ['register-stream-attempt', 'unregister-stream-attempt', 'renderer-log', 'schedule-rendered', 'allow-recovery-domains', 'recovery-test-result', 'copy-text'];
 const INVOKE_ALLOWED = ['get-schedule-path', 'get-stream-base-urls', 'get-debug-mode', 'get-recovery-candidates'];
 
 contextBridge.exposeInMainWorld('channelSurfer', {
@@ -17,5 +17,8 @@ contextBridge.exposeInMainWorld('channelSurfer', {
   },
   onStreamSuccess(handler) {
     ipcRenderer.on('stream-attempt-success', (event, payload) => handler(payload));
+  },
+  onRecoveryPromoted(handler) {
+    ipcRenderer.on('recovery-promoted', (event, payload) => handler(payload));
   }
 });

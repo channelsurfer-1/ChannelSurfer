@@ -4,7 +4,7 @@ const { app } = require('electron');
 
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
 
-const { BrowserWindow, session, ipcMain, protocol } = require('electron');
+const { BrowserWindow, session, ipcMain, protocol, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const debug = require('./src/debug');
@@ -28,6 +28,7 @@ const runtimeAllowedDomains = new Set(); // session-only test allow-set
 let knownPassengers = new Set();       // domains that failed their recovery test
 const chainHosts = new Set();          // derived: hosts observed as streaming referrers or allowed subFrame hosts
 const shellHosts = new Set();          // seeded from baseStreamUrls; shell-ref alone implies ad unless the block was a subFrame
+let pendingPromotion = null;           // recovery stage 3: { domains, timer } while the 60s soak runs
 
 // ---------- Logging ----------
 function log(category, message) {
@@ -541,6 +542,48 @@ ipcMain.on('allow-recovery-domains', (event, payload) => {
   }
 });
 
+ipcMain.on('recovery-test-result', (event, payload) => {
+  if (!payload || !Array.isArray(payload.domains)) return;
+  const domains = payload.domains.map(d => String(d).toLowerCase()).filter(Boolean);
+  if (payload.passed === true) {
+    if (pendingPromotion) clearTimeout(pendingPromotion.timer);
+    log('CONFIG', 'Recovery test passed; promoting in 60s if playback stays stable: ' + domains.join(', '));
+    pendingPromotion = {
+      domains,
+      timer: setTimeout(() => {
+        pendingPromotion = null;
+        const additions = loadAdditions();
+        additions.safeDomains = Array.from(new Set([...additions.safeDomains, ...domains]));
+        saveAdditions(additions);
+        activeConfig.safeDomains = Array.from(new Set([...activeConfig.safeDomains, ...domains]));
+        log('CONFIG', 'Promoted local addition(s) after 60s stable: ' + domains.join(', '));
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('recovery-promoted', { domains });
+        }
+      }, 60000)
+    };
+  } else {
+    if (pendingPromotion) {
+      clearTimeout(pendingPromotion.timer);
+      pendingPromotion = null;
+      log('CONFIG', 'Recovery promotion cancelled — playback failed during soak');
+    }
+    if (domains.length === 1 && !knownPassengers.has(domains[0])) {
+      const additions = loadAdditions();
+      additions.passengers = Array.from(new Set([...additions.passengers, domains[0]]));
+      saveAdditions(additions);
+      knownPassengers.add(domains[0]);
+      log('CONFIG', 'Recorded passenger (solo test failed): ' + domains[0]);
+    }
+  }
+});
+
+ipcMain.on('copy-text', (event, payload) => {
+  if (typeof payload === 'string' && payload) {
+    clipboard.writeText(payload);
+  }
+});
+
 ipcMain.on('register-stream-attempt', (event, payload) => {
   if (payload && typeof payload.webContentsId === 'number') {
     trackedStreamWebviews.add(payload.webContentsId);
@@ -605,6 +648,7 @@ app.whenReady().then(async () => {
   log('CONFIG', 'Active safeDomains: ' + activeConfig.safeDomains.join(', '));
   if (additions.safeDomains.length > 0) {
     log('CONFIG', 'Merged local addition(s): ' + additions.safeDomains.join(', '));
+    log('CONFIG', 'Note: local additions are not in the gist — gist update is manual.');
   }
   if (debug.enabled) {
     log('DEBUG', 'Debug logging enabled (CHANNELSURFER_DEBUG=1 or --debug)');
