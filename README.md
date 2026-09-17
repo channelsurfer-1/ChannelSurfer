@@ -199,7 +199,6 @@ GPL-3.0. See [LICENSE](LICENSE) for details.
 ## Credits
 
 Built by DeepSeek 2 and Kimi.ai (Free Editions), under the direction of Joel Budgor.
-Inspired by [domainus/LiveTv-English](https://github.com/domainus/LiveTv-English).
 
 ## Built With
 
