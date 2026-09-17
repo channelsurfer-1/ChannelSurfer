@@ -7,6 +7,7 @@ app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,Media
 const { BrowserWindow, session, ipcMain, protocol } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const debug = require('./src/debug');
 
 app.commandLine.appendSwitch('log-level', '3');
 app.commandLine.appendSwitch('disable-logging');
@@ -172,6 +173,27 @@ function isStreamingContent(url) {
          url.includes('.pdf');
 }
 
+// ---------- Debug-mode helpers (produce no output when debug is disabled) ----------
+// Requests referred by these shell hosts are considered known noise for debug
+// logging. Streaming content is never treated as noise.
+const DEBUG_NOISE_REFERRERS = ['dlhd.st', 'dlstreams.st', 'dlive.sx', 'iplayer.is', 'summertisaridicu.org'];
+
+function truncateUrl(url, max) {
+  return url.length > max ? url.slice(0, max) + '...' : url;
+}
+
+function isDebugNoise(details) {
+  if (details.url.includes('.m3u8') || isStreamingContent(details.url)) return false;
+  try {
+    const refHost = details.referrer ? new URL(details.referrer).hostname.toLowerCase() : '';
+    if (!refHost) return false;
+    return DEBUG_NOISE_REFERRERS.some(d => refHost === d || refHost.endsWith('.' + d));
+  } catch (_) {
+    return false;
+  }
+}
+// ---------- End debug-mode helpers ----------
+
 function isSafeDomain(url) {
   if (isStreamPlayerPage(url) || isStreamingContent(url)) {
     return true;
@@ -270,6 +292,11 @@ function createWindow() {
         }
 
         if (isSafeDomain(details.url)) {
+          if (debug.enabled && !isDebugNoise(details)) {
+            let reqRefHost = '';
+            try { reqRefHost = details.referrer ? new URL(details.referrer).hostname : ''; } catch (_) {}
+            log('REQ', `${(details.resourceType || 'unknown').padEnd(8)} ${hostname}${reqRefHost ? '  ref=' + reqRefHost : ''}`);
+          }
           callback({ cancel: false });
           return;
         }
@@ -297,6 +324,12 @@ function createWindow() {
         const headers = details.requestHeaders || {};
 
         if (details.url.includes('.m3u8')) {
+          if (debug.enabled) {
+            log('HDR', 'm3u8 req ' + truncateUrl(details.url, 130));
+            log('HDR', '  wire-in UA=' + (headers['User-Agent'] || headers['user-agent'] || '(none)'));
+            log('HDR', '  wire-in Referer=' + (headers['Referer'] || headers['referer'] || '(none)') + ' Origin=' + (headers['Origin'] || headers['origin'] || '(none)'));
+            log('HDR', '  rebuilt to 4-header curl-parity set');
+          }
           callback({ cancel: false, requestHeaders: {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36',
             'Accept': '*/*',
@@ -316,6 +349,12 @@ function createWindow() {
         headers['Accept-Language'] = 'en-US,en;q=0.6';
         headers['Sec-GPC'] = '1';
 
+        if (debug.enabled && isStreamingContent(details.url)) {
+          log('HDR', `${(details.resourceType || '').padEnd(8)} ${truncateUrl(details.url, 120)}`);
+          log('HDR', `  out UA=${(headers['User-Agent'] || headers['user-agent'] || '(none)')}`);
+          log('HDR', `  out Referer=${headers['Referer'] || headers['referer'] || '(none)'} Origin=${headers['Origin'] || headers['origin'] || '(none)'}`);
+        }
+
         callback({ cancel: false, requestHeaders: headers });
       } catch (err) {
         callback({ cancel: false });
@@ -327,6 +366,12 @@ function createWindow() {
     { urls: ['*://*/*'] },
     (details) => {
       try {
+        if (debug.enabled) {
+          const interesting = isStreamingContent(details.url) || details.statusCode >= 400 || !isSafeDomain(details.url);
+          if (interesting && !isDebugNoise(details)) {
+            log('RESP', `${String(details.statusCode).padEnd(4)} ${(details.resourceType || '').padEnd(8)} ${truncateUrl(details.url, 130)}`);
+          }
+        }
         if (!details.url.includes('.m3u8')) return;
         if (!trackedStreamWebviews.has(details.webContentsId)) return;
         if (details.statusCode >= 400) return;
@@ -408,6 +453,19 @@ app.on('web-contents-created', (event, contents) => {
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
   if (contents.getType() === 'webview') {
     contents.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36');
+    if (debug.enabled) {
+      contents.on('did-navigate', (e, url) => {
+        log('NAV', `NAV  wc=${contents.id} ${truncateUrl(url, 130)}`);
+      });
+      contents.on('did-fail-provisional-load', (e, errorCode, errorDescription, url) => {
+        log('NAV', `FAIL wc=${contents.id} code=${errorCode} ${errorDescription} ${truncateUrl(url, 110)}`);
+      });
+      contents.on('did-fail-load', (e, errorCode, errorDescription, url, isMainFrame) => {
+        if (isMainFrame) {
+          log('NAV', `FAIL wc=${contents.id} code=${errorCode} ${errorDescription} ${truncateUrl(url, 110)}`);
+        }
+      });
+    }
   }
 });
 
@@ -418,6 +476,10 @@ app.whenReady().then(async () => {
 
   activeConfig = await loadConfig();
   log('CONFIG', 'Active safeDomains: ' + activeConfig.safeDomains.join(', '));
+  if (debug.enabled) {
+    log('DEBUG', 'Debug logging enabled (CHANNELSURFER_DEBUG=1 or --debug)');
+    log('CONFIG', 'baseStreamUrls: ' + activeConfig.baseStreamUrls.join(' | '));
+  }
 
   protocol.registerFileProtocol('app', (request, callback) => {
     const url = request.url.substr(6);

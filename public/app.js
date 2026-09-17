@@ -65,6 +65,10 @@ function logToMain(message) {
   sendIpc('renderer-log', message);
 }
 
+function isDebug() {
+  return !!(window.channelSurfer && window.channelSurfer.debug);
+}
+
 // ---------- Per-mode pane content ----------
 
 function getPaneWrapper(pane, mode, createIfMissing) {
@@ -289,6 +293,10 @@ function runStreamAttempt(attempt) {
   const baseUrl = streamBaseUrls[attempt.candidateIndex];
   const url = `${baseUrl}${attempt.dlhdId}.php`;
 
+  if (isDebug()) {
+    logToMain('[CAND] trying candidate ' + (attempt.candidateIndex + 1) + '/' + streamBaseUrls.length + ': ' + url);
+  }
+
   const webview = createWebview(attempt.stationName, url);
   webview.style.visibility = 'hidden';
   attempt.webview = webview;
@@ -325,6 +333,9 @@ function runStreamAttempt(attempt) {
       const id = thisWebview.getWebContentsId();
       attempt.webContentsId = id;
       sendIpc('register-stream-attempt', { webContentsId: id });
+      if (isDebug()) {
+        logToMain('[CAND] candidate ' + (attempt.candidateIndex + 1) + ' dom-ready wc=' + id);
+      }
     } catch (_) {}
   });
 
@@ -332,12 +343,15 @@ function runStreamAttempt(attempt) {
     if (attempt.cancelled || attempt.webview !== thisWebview) return;
     if (!e.isMainFrame) return;
     if (e.errorCode === -3) return; // ERR_ABORTED
+    if (isDebug()) {
+      logToMain('[CAND] candidate ' + (attempt.candidateIndex + 1) + ' did-fail-load code=' + e.errorCode + ' desc=' + (e.errorDescription || '?'));
+    }
     advanceStreamAttempt(attempt);
   });
 
   webview.addEventListener('console-message', (e) => {
     if (attempt.cancelled || attempt.webview !== thisWebview) return;
-    if (e.level >= 2) logToMain('[WV:' + attempt.dlhdId + '] ' + e.message);
+    if (e.level >= 2 || isDebug()) logToMain('[WV:' + attempt.dlhdId + '] ' + e.message);
   });
 
   attempt.timer = setTimeout(() => {
@@ -764,6 +778,7 @@ function populateScheduleList(listContainer, pane, paneIndex) {
     const stationText = document.createElement('span');
     stationText.className = 'pane-schedule-station-text';
     stationText.textContent = displayName;
+
     stationSpan.appendChild(stationText);
 
     row.appendChild(stationSpan);
