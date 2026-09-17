@@ -6,7 +6,8 @@
     "start": "electron .",
     "package": "bash scripts/build-mac.sh",
     "package:win": "bash scripts/build-win.sh",
-    "package:linux": "bash scripts/build-linux.sh"
+    "package:linux": "bash scripts/build-linux.sh",
+    "package:all": "npm run package && npm run package:win && npm run package:linux"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",
