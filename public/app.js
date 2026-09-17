@@ -24,7 +24,7 @@ let scheduleScrollPositions = {
 };
 
 const BASE_STREAM_URL_FALLBACK = 'https://dlive.sx/stream/stream-';
-const STREAM_ATTEMPT_TIMEOUT_MS = 5000;
+const STREAM_ATTEMPT_TIMEOUT_MS = 7000;
 
 let streamBaseUrls = [BASE_STREAM_URL_FALLBACK];
 const streamAttempts = new Map();
