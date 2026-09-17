@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "updated": "2026-09-16",
+  "baseStreamUrls": [
+    "https://dlive.sx/stream/stream-",
+    "https://dlstreams.st/watch/stream-",
+    "https://dlhd.st/stream/stream-",
+    "https://dlive.sx/watch/stream-"
+  ],
+  "safeDomains": [
+    "dlhd.st",
+    "dlstreams.st",
+    "dlive.sx",
+    "iplayer.is",
+    "summertisaridicu.org",
+    "jwpcdn.com",
+    "tiktokcdn-us.com",
+    "tiestep.top",
+    "ns.clypeiescapes.com",
+    "cdn.jsdelivr.net"
+  ]
+}

@@ -3,5 +3,7 @@ data/*
 !data/final_channel_mapping.json
 .DS_Store
 dist/
-documentation/
+documentation/*
+!documentation/*.png
+!documentation/config.json
 .staging-images/
