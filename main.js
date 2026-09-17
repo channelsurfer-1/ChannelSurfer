@@ -340,6 +340,12 @@ function createWindow() {
           return;
         }
 
+        if (debug.enabled && (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame')) {
+          log('HDR', `nav ${(details.resourceType || '').padEnd(8)} ${truncateUrl(details.url, 110)}`);
+          log('HDR', `  wire-in UA=${(headers['User-Agent'] || headers['user-agent'] || '(none)')}`);
+          log('HDR', `  wire-in Referer=${headers['Referer'] || headers['referer'] || '(none)'}`);
+        }
+
         if (details.resourceType === 'mainFrame' && !headers['Referer'] && !headers['referer']) {
           headers['Referer'] = 'https://dlhd.st/';
         }
