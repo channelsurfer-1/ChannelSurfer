@@ -323,9 +323,10 @@ function createWindow() {
       try {
         const headers = details.requestHeaders || {};
 
-        if (details.url.includes('.m3u8')) {
+        if (isStreamingContent(details.url) && !details.url.includes('.pdf')) {
+          const streamKind = details.url.includes('.m3u8') ? 'm3u8' : 'segment';
           if (debug.enabled) {
-            log('HDR', 'm3u8 req ' + truncateUrl(details.url, 130));
+            log('HDR', streamKind + ' req ' + truncateUrl(details.url, 130));
             log('HDR', '  wire-in UA=' + (headers['User-Agent'] || headers['user-agent'] || '(none)'));
             log('HDR', '  wire-in Referer=' + (headers['Referer'] || headers['referer'] || '(none)') + ' Origin=' + (headers['Origin'] || headers['origin'] || '(none)'));
             log('HDR', '  rebuilt to 4-header curl-parity set');
