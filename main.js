@@ -21,6 +21,12 @@ let blockedDomainsLogged = new Set();
 let streamPlayerDomains = new Set();
 const trackedStreamWebviews = new Set();
 
+// Recovery dialog feature (stage 1): candidate tracking, runtime test allow-set,
+// and local additions merge. Inert until the stage-2 UI wires into it.
+const blockedDomainRefs = new Map();   // hostname -> { refHost, count, lastSeenMs }
+const runtimeAllowedDomains = new Set(); // session-only test allow-set
+let knownPassengers = new Set();       // domains that failed their recovery test
+
 // ---------- Logging ----------
 function log(category, message) {
   const now = new Date();
@@ -123,6 +129,37 @@ async function loadConfig() {
   return BASELINE_CONFIG;
 }
 // ---------- End remote config ----------
+
+// ---------- Local config additions (recovery dialog, stage 1) ----------
+function getAdditionsPath() {
+  return path.join(app.getPath('userData'), 'config-additions.json');
+}
+
+function loadAdditions() {
+  try {
+    const p = getAdditionsPath();
+    if (!fs.existsSync(p)) return { safeDomains: [], passengers: [] };
+    const obj = JSON.parse(fs.readFileSync(p, 'utf8'));
+    return {
+      safeDomains: Array.isArray(obj.safeDomains) ? obj.safeDomains.filter(d => typeof d === 'string' && d) : [],
+      passengers: Array.isArray(obj.passengers) ? obj.passengers.filter(d => typeof d === 'string' && d) : []
+    };
+  } catch (err) {
+    log('ERROR', 'Failed to read config additions: ' + err.message);
+    return { safeDomains: [], passengers: [] };
+  }
+}
+
+function saveAdditions(additions) {
+  try {
+    const p = getAdditionsPath();
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(additions, null, 2), 'utf8');
+  } catch (err) {
+    log('ERROR', 'Failed to write config additions: ' + err.message);
+  }
+}
+// ---------- End local config additions ----------
 
 function getSecurityLogPath() {
   const dataDir = app.isPackaged
@@ -301,14 +338,26 @@ function createWindow() {
           return;
         }
 
+        if (runtimeAllowedDomains.has(hostname)) {
+          if (debug.enabled) {
+            log('REQ', `test-allow ${(details.resourceType || 'unknown').padEnd(8)} ${hostname}`);
+          }
+          callback({ cancel: false });
+          return;
+        }
+
+        let refHost = '';
+        try { refHost = details.referrer ? new URL(details.referrer).hostname : ''; } catch (_) {}
+
         if (!blockedDomainsLogged.has(hostname)) {
           blockedDomainsLogged.add(hostname);
           const entry = `[AUTO-BLOCKED] ${hostname} ${details.resourceType} ${details.url.slice(0, 160)}`;
-          let refHost = '';
-          try { refHost = details.referrer ? new URL(details.referrer).hostname : ''; } catch (_) {}
           log('BLOCK', `${(details.resourceType || 'unknown').padEnd(8)} ${hostname}${refHost ? '  ref=' + refHost : ''}`);
           writeSecurityLog(entry);
         }
+
+        const prevBlock = blockedDomainRefs.get(hostname);
+        blockedDomainRefs.set(hostname, { refHost, count: prevBlock ? prevBlock.count + 1 : 1, lastSeenMs: Date.now() });
 
         callback({ cancel: true });
       } catch (_) {
@@ -489,10 +538,23 @@ app.whenReady().then(async () => {
   resetSecurityLog();
 
   activeConfig = await loadConfig();
+
+  const additions = loadAdditions();
+  if (additions.safeDomains.length > 0) {
+    activeConfig.safeDomains = Array.from(new Set([...activeConfig.safeDomains, ...additions.safeDomains]));
+  }
+  knownPassengers = new Set(additions.passengers);
+
   log('CONFIG', 'Active safeDomains: ' + activeConfig.safeDomains.join(', '));
+  if (additions.safeDomains.length > 0) {
+    log('CONFIG', 'Merged local addition(s): ' + additions.safeDomains.join(', '));
+  }
   if (debug.enabled) {
     log('DEBUG', 'Debug logging enabled (CHANNELSURFER_DEBUG=1 or --debug)');
     log('CONFIG', 'baseStreamUrls: ' + activeConfig.baseStreamUrls.join(' | '));
+    if (additions.passengers.length > 0) {
+      log('DEBUG', 'Known passengers (failed recovery tests): ' + additions.passengers.join(', '));
+    }
   }
 
   protocol.registerFileProtocol('app', (request, callback) => {
