@@ -352,11 +352,12 @@ function runStreamAttempt(attempt) {
 
   webview.addEventListener('console-message', (e) => {
     if (attempt.cancelled || attempt.webview !== thisWebview) return;
+    if (!isDebug() && e.message.includes('announce error')) return;
     if (e.level >= 2 || (isDebug() && !e.message.includes('[object Object]'))) {
       logToMain('[WV:' + attempt.dlhdId + '] ' + e.message);
     }
   });
-
+  
   attempt.timer = setTimeout(() => {
     if (attempt.cancelled || attempt.webview !== thisWebview) return;
     advanceStreamAttempt(attempt);
