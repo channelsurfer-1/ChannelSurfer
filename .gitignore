@@ -1,3 +1,4 @@
 node_modules/
-data/
+data/*
+!data/final_channel_mapping.json
 .DS_Store
