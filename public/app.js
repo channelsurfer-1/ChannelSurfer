@@ -1006,14 +1006,7 @@ function showScheduleOverlay(pane, paneIndex, existingProgram) {
 
   const programHeader = document.createElement('div');
   programHeader.className = 'pane-schedule-header-program';
-  if (scheduleData && scheduleData.generatedAt) {
-    const generated = new Date(scheduleData.generatedAt);
-    programHeader.textContent = isNaN(generated.getTime())
-      ? 'Program'
-      : 'Program · updated ' + generated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } else {
-    programHeader.textContent = 'Program';
-  }
+  programHeader.textContent = 'Program';
   header.appendChild(programHeader);
 
   overlay.appendChild(header);

@@ -107,12 +107,14 @@ Pre-built binaries for macOS, Windows, and Linux are available on the
 
 ## How It Works
 
-1. Launch the app
-2. Click "Click to select a program" in any panel
-3. Browse the program guide for the program that interests you
-4. Click the program to fill that panel
-5. Switch from Single to Dual or Grid View to view more than one program at a time — populated panels resume instantly, right where they left off
-6. Closing a program returns the panel to the program guide
+1. Launch the app. It loads the program guide first — a brief
+   "Loading the program guide..." message appears, then the guide opens
+   on its own.
+2. Browse the program guide for the program that interests you
+   (click "Click to select a program" in any empty panel to reopen it)
+3. Click the program to fill that panel
+4. Switch from Single to Dual or Grid View to view more than one program at a time — populated panels resume instantly, right where they left off
+5. Closing a program returns the panel to the program guide
 
 If the primary stream URL fails, the app automatically tries alternate
 sources before giving up. A brief "Connecting..."
@@ -145,7 +147,15 @@ for the shared config to refresh, then try again.
 ### A channel won't play
 
 1. **Try a different channel.** If others work, it's that one stream — try again later.
-2. **Look at the message in the panel.** "Access Blocked" means the *source site* refused your connection (usually regional or IP-based). This is outside the app's control and is often temporary — retry in a while.
+2. **Look at the message in the panel.** "Could not connect to server." means every stream source failed to respond — usually your network connection, or the *source site* refusing connections (regional or IP-based). If other channels work, it's that one stream; try again later.
+
+### The guide says "Unable to load program guide..."
+
+The app could not reach the EPG source to build the program guide. This is
+almost always a network problem on your side, or the source being temporarily
+down. The app keeps retrying on its own — the guide appears as soon as a
+connection succeeds, no restart needed. Keep in mind that streams need
+network too, so if the guide can't load, channels won't play either.
 3. **Restart the app.** The shared config updates at launch; a fix may already be live.
 
 ### Getting detailed logs (debug mode)
