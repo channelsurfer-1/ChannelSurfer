@@ -264,11 +264,14 @@ function generateSchedule() {
     .then(() => {
       schedulePath = generateScheduleJson();
       log('EPG', 'Schedule regenerated');
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('schedule-ready', { path: schedulePath });
+      }
       return schedulePath;
     })
     .catch(err => {
       log('ERROR', 'Schedule regeneration failed: ' + err.message);
-      return schedulePath;
+      return null;
     });
 }
 
@@ -664,8 +667,20 @@ app.whenReady().then(async () => {
     callback({ path: imagePath });
   });
 
-  schedulePath = await generateSchedule();
+  // Window first: startup must never block on the network. The initial
+  // schedule fetch runs in the background and retries until it succeeds;
+  // the renderer learns the path via the 'schedule-ready' push.
   createWindow();
+
+  (async () => {
+    const retryDelayMs = 30000;
+    for (;;) {
+      const generated = await generateSchedule();
+      if (generated) break;
+      log('WARN', `Schedule unavailable; retrying in ${retryDelayMs / 1000}s`);
+      await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+    }
+  })();
 
   scheduleHalfHourRegeneration();
 });

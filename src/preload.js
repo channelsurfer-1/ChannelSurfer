@@ -20,5 +20,8 @@ contextBridge.exposeInMainWorld('channelSurfer', {
   },
   onRecoveryPromoted(handler) {
     ipcRenderer.on('recovery-promoted', (event, payload) => handler(payload));
+  },
+  onScheduleReady(handler) {
+    ipcRenderer.on('schedule-ready', (event, payload) => handler(payload));
   }
 });

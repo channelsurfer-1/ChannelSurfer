@@ -1271,6 +1271,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
+    window.channelSurfer.onScheduleReady((payload) => {
+      if (payload && typeof payload.path === 'string' && payload.path) {
+        schedulePath = payload.path;
+        loadSchedule();
+      }
+    });
+
     window.channelSurfer.onRecoveryPromoted((payload) => {
       if (!payload || !Array.isArray(payload.domains)) return;
       if (!pendingPromotionView) return;
