@@ -198,7 +198,7 @@ GPL-3.0. See [LICENSE](LICENSE) for details.
 
 ## Credits
 
-Built by DeepSeek 2 and Kimi.ai (Free Editions), under the direction of Joel Budgor.
+Built by Kimi.ai and DeepSeek (Free Editions), under the direction of Joel Budgor.
 
 ## Built With
 
