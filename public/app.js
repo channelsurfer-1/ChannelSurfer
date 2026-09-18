@@ -1,4 +1,8 @@
 let scheduleData = null;
+let guideUnavailableSince = Date.now();
+const GUIDE_ERROR_THRESHOLD_MS = 15000;
+const GUIDE_STATUS_MIN_MS = 1000;
+let guideStatusShownAt = null;
 let programTimers = new Map();
 let currentViewMode = 'single';
 let tooltipTimer = null;
@@ -315,8 +319,6 @@ function runStreamAttempt(attempt) {
   indicator.style.display = 'flex';
   indicator.style.alignItems = 'center';
   indicator.style.justifyContent = 'center';
-  indicator.style.background = 'rgba(0,0,0,0.75)';
-  indicator.style.color = '#eee';
   indicator.style.fontSize = '1rem';
   indicator.style.zIndex = '100';
   const labelSpan = document.createElement('span');
@@ -426,9 +428,7 @@ function succeedStreamAttempt(attempt) {
   if (attempt.webview) {
     attempt.webview.style.visibility = '';
   }
-  if (attempt.programTitle) {
-    attachPaneLabel(attempt.wrapper, attempt.stationName, attempt.programTitle);
-  }
+  attachPaneLabel(attempt.wrapper, attempt.stationName, attempt.programTitle || attempt.stationName);
 }
 
 function failStreamAttempt(attempt) {
@@ -739,6 +739,54 @@ function hideTooltip() {
   if (tooltip) tooltip.style.display = 'none';
 }
 
+function isScheduleFresh(data) {
+  if (!data || !data.generatedAt) return false;
+  const generated = new Date(data.generatedAt);
+  if (isNaN(generated.getTime())) return false;
+  const now = new Date();
+  return generated.getUTCFullYear() === now.getUTCFullYear() &&
+         generated.getUTCMonth() === now.getUTCMonth() &&
+         generated.getUTCDate() === now.getUTCDate();
+}
+
+function updateGuideStatusScreen() {
+  const el = document.getElementById('guide-status-screen');
+  if (!el) return;
+  if (scheduleData) {
+    const shownMs = guideStatusShownAt ? Date.now() - guideStatusShownAt : Infinity;
+    if (shownMs >= GUIDE_STATUS_MIN_MS) {
+      el.remove();
+      guideStatusShownAt = null;
+      return;
+    }
+    setTimeout(() => {
+      if (el.isConnected) updateGuideStatusScreen();
+    }, GUIDE_STATUS_MIN_MS - shownMs);
+    return;
+  }
+
+  const unavailableMs = guideUnavailableSince ? Date.now() - guideUnavailableSince : 0;
+  el.textContent = '';
+  const label = document.createElement('span');
+  if (unavailableMs >= GUIDE_ERROR_THRESHOLD_MS) {
+    label.textContent = 'Unable to load program guide...';
+  } else {
+    label.textContent = 'Loading the program guide';
+    const dots = document.createElement('span');
+    dots.className = 'connecting-dots';
+    dots.textContent = '…';
+    label.appendChild(dots);
+
+    const remaining = GUIDE_ERROR_THRESHOLD_MS - unavailableMs;
+    if (remaining > 0) {
+      setTimeout(() => {
+        if (el.isConnected) updateGuideStatusScreen();
+      }, remaining);
+    }
+  }
+  el.appendChild(label);
+}
+
 function getCurrentProgramInfo(dlhdId) {
   if (!scheduleData || !scheduleData.stations) return null;
 
@@ -958,7 +1006,14 @@ function showScheduleOverlay(pane, paneIndex, existingProgram) {
 
   const programHeader = document.createElement('div');
   programHeader.className = 'pane-schedule-header-program';
-  programHeader.textContent = 'Program';
+  if (scheduleData && scheduleData.generatedAt) {
+    const generated = new Date(scheduleData.generatedAt);
+    programHeader.textContent = isNaN(generated.getTime())
+      ? 'Program'
+      : 'Program · updated ' + generated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } else {
+    programHeader.textContent = 'Program';
+  }
   header.appendChild(programHeader);
 
   overlay.appendChild(header);
@@ -977,7 +1032,36 @@ function showScheduleOverlay(pane, paneIndex, existingProgram) {
 }
 
 function populateScheduleList(listContainer, pane, paneIndex) {
-  if (!scheduleData || !scheduleData.stations) return;
+  if (!scheduleData || !scheduleData.stations) {
+    const msgRow = document.createElement('div');
+    msgRow.className = 'pane-schedule-row';
+    msgRow.style.cssText = 'color:#999;font-size:13px;padding:14px 12px;';
+
+    const unavailableMs = guideUnavailableSince ? Date.now() - guideUnavailableSince : 0;
+    if (unavailableMs >= GUIDE_ERROR_THRESHOLD_MS) {
+      msgRow.textContent = "Can't load program guide.";
+    } else {
+      const labelSpan = document.createElement('span');
+      labelSpan.textContent = 'Loading the program guide';
+      const dotsSpan = document.createElement('span');
+      dotsSpan.className = 'connecting-dots';
+      dotsSpan.textContent = '…';
+      labelSpan.appendChild(dotsSpan);
+      msgRow.appendChild(labelSpan);
+
+      const remaining = GUIDE_ERROR_THRESHOLD_MS - unavailableMs;
+      if (remaining > 0) {
+        setTimeout(() => {
+          if (msgRow.isConnected && !scheduleData) {
+            msgRow.textContent = "Can't load program guide.";
+          }
+        }, remaining);
+      }
+    }
+
+    listContainer.appendChild(msgRow);
+    return;
+  }
 
   const nowMs = Date.now();
   const stationsEntries = Object.entries(scheduleData.stations);
@@ -1165,7 +1249,21 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error(`HTTP ${response.status}`);
       }
       const data = await response.json();
+      if (!isScheduleFresh(data)) {
+        if (isDebug()) {
+          logToMain('[SCHED] stale or unlabeled schedule rejected; retrying');
+        }
+        scheduleData = null;
+        guideUnavailableSince = guideUnavailableSince || Date.now();
+        updateGuideStatusScreen();
+        throw new Error('stale schedule');
+      }
+      if (guideStatusShownAt && Date.now() - guideStatusShownAt < GUIDE_STATUS_MIN_MS) {
+        await new Promise(resolve => setTimeout(resolve, GUIDE_STATUS_MIN_MS - (Date.now() - guideStatusShownAt)));
+      }
       scheduleData = data;
+      guideUnavailableSince = null;
+      updateGuideStatusScreen();
 
       scheduleScrollPositions = {
         single: [0],
@@ -1176,6 +1274,10 @@ document.addEventListener('DOMContentLoaded', () => {
       Object.values(viewStates).forEach(state => {
         state.forEach(program => {
           if (program) {
+            const info = getCurrentProgramInfo(program.dlhdId);
+            if (info) {
+              updatePaneLabel(program.dlhdId, info.programName);
+            }
             scheduleProgramTimer(program.dlhdId);
           }
         });
@@ -1183,11 +1285,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
       updateModeButtonIcons();
       renderView();
-      try {
-        if (window.channelSurfer) {
-          window.channelSurfer.send('schedule-rendered');
-        }
-      } catch (_) {}
     } catch (err) {
 
       setTimeout(loadSchedule, 2000);
@@ -1274,7 +1371,9 @@ document.addEventListener('DOMContentLoaded', () => {
     window.channelSurfer.onScheduleReady((payload) => {
       if (payload && typeof payload.path === 'string' && payload.path) {
         schedulePath = payload.path;
-        loadSchedule();
+        if (!scheduleData || !isScheduleFresh(scheduleData)) {
+          loadSchedule();
+        }
       }
     });
 
@@ -1290,6 +1389,19 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     loadSchedule();
   }
+
+  const statusScreen = document.createElement('div');
+  statusScreen.id = 'guide-status-screen';
+  const bodyStyle = getComputedStyle(document.body);
+  const themeBg = bodyStyle.backgroundColor !== 'rgba(0, 0, 0, 0)'
+    ? bodyStyle.backgroundColor
+    : getComputedStyle(document.documentElement).backgroundColor;
+  statusScreen.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:1.1rem;z-index:1000;background:' + themeBg + ';color:' + bodyStyle.color + ';';
+  document.body.appendChild(statusScreen);
+  guideStatusShownAt = Date.now();
+  updateGuideStatusScreen();
+
+  renderView();
 
   scheduleNextRefresh();
   scheduleOverlayRefresh();

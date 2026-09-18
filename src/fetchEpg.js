@@ -28,9 +28,15 @@ function getPaths() {
   };
 }
 
+let activeController = null;
+
 function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
     const controller = new AbortController();
+    activeController = controller;
+    const release = () => {
+      if (activeController === controller) activeController = null;
+    };
     const timer = setTimeout(() => controller.abort(), EPG_FETCH_TIMEOUT_MS);
     const file = fs.createWriteStream(dest);
     let settled = false;
@@ -38,6 +44,7 @@ function downloadFile(url, dest) {
     const fail = (err) => {
       if (settled) return;
       settled = true;
+      release();
       clearTimeout(timer);
       file.destroy();
       fs.unlink(dest, () => {});
@@ -58,6 +65,7 @@ function downloadFile(url, dest) {
         file.close(() => {
           if (settled) return;
           settled = true;
+          release();
           clearTimeout(timer);
           resolve(dest);
         });
@@ -121,7 +129,13 @@ async function fetchEpg() {
   return paths.xml;
 }
 
-module.exports = { fetchEpg, getPaths };
+function abortActiveFetch() {
+  if (activeController) {
+    activeController.abort();
+  }
+}
+
+module.exports = { fetchEpg, getPaths, abortActiveFetch };
 
 if (require.main === module) {
   fetchEpg().catch(err => {

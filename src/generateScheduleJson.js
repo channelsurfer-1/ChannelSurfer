@@ -3,8 +3,6 @@ const path = require('path');
 const { getMapping } = require('./mapChannels');
 const { parseProgrammes } = require('./getSchedule');
 
-const WINDOW_MS = 2.5 * 60 * 60 * 1000; // 2 hours 30 minutes
-
 function getDataDir() {
   try {
     const { app } = require('electron');
@@ -54,20 +52,10 @@ function formatTime(date) {
   });
 }
 
-function getWindowStart(now) {
-  const start = new Date(now);
-  const minutes = start.getMinutes();
-
-  if (minutes < 30) {
-    start.setMinutes(0, 0, 0);
-  } else {
-    start.setMinutes(30, 0, 0);
-  }
-
-  return start;
-}
-
-function buildSlots(programmes, windowStart, windowEnd) {
+// Open-ended: every programme in the rip is included. Each slot carries its
+// own startMs/stopMs, so the schedule is valid until its programmes end —
+// no artificial validity window.
+function buildSlots(programmes) {
   const slots = [];
   const sorted = programmes
     .filter(p => p.title)
@@ -76,10 +64,6 @@ function buildSlots(programmes, windowStart, windowEnd) {
   for (const prog of sorted) {
     const start = toUtcDate(prog.start);
     const stop = toUtcDate(prog.stop);
-
-    // Does this programme overlap the window?
-    if (stop <= windowStart) continue;
-    if (start >= windowEnd) continue;
 
     slots.push({
       program: prog.title,
@@ -104,14 +88,12 @@ function generateScheduleJson() {
   const programmes = parseProgrammes(xml);
 
   const now = new Date();
-  const windowStart = getWindowStart(now);
-  const windowEnd = new Date(windowStart.getTime() + WINDOW_MS);
 
   const stations = {};
 
   for (const [dlhdId, channel] of Object.entries(mapping)) {
     const channelProgrammes = programmes.filter(p => p.channel === channel.epg_id);
-    const slots = buildSlots(channelProgrammes, windowStart, windowEnd);
+    const slots = buildSlots(channelProgrammes);
 
     stations[channel.dlhd_name] = {
       dlhdId,
@@ -121,8 +103,6 @@ function generateScheduleJson() {
 
   const result = {
     generatedAt: now.toISOString(),
-    windowStart: windowStart.toISOString(),
-    windowEnd: windowEnd.toISOString(),
     stations
   };
 

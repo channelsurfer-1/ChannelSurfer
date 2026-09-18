@@ -484,16 +484,13 @@ function createWindow() {
   
   const targetPath = path.join(__dirname, 'public', 'index.html');
 
+  win.once('ready-to-show', () => {
+    win.show();
+  });
+
   win.loadFile(targetPath).catch(err => {
     log('ERROR', 'Failed to load HTML file: ' + err.message);
   });
-
-  setTimeout(() => {
-    if (win && !win.isVisible()) {
-      log('WARN', 'Schedule render timed out; showing window anyway');
-      win.show();
-    }
-  }, 10000);
 }
 
 ipcMain.handle('get-schedule-path', () => schedulePath);
@@ -605,12 +602,6 @@ ipcMain.on('renderer-log', (event, message) => {
   }
 });
 
-ipcMain.on('schedule-rendered', () => {
-  if (win && !win.isVisible()) {
-    win.show();
-  }
-});
-
 app.on('web-contents-created', (event, contents) => {
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
   if (contents.getType() === 'webview') {
@@ -672,13 +663,33 @@ app.whenReady().then(async () => {
   // the renderer learns the path via the 'schedule-ready' push.
   createWindow();
 
+  let scheduleRetryTimer = null;
+  let appQuitting = false;
+
+  app.on('before-quit', () => {
+    appQuitting = true;
+    if (scheduleRetryTimer) {
+      clearTimeout(scheduleRetryTimer);
+      scheduleRetryTimer = null;
+    }
+    try {
+      const { abortActiveFetch } = require('./src/fetchEpg');
+      abortActiveFetch();
+    } catch (_) {}
+  });
+
   (async () => {
-    const retryDelayMs = 30000;
-    for (;;) {
+    const retryDelayMs = 15000;
+    while (!appQuitting) {
       const generated = await generateSchedule();
-      if (generated) break;
+      if (generated || appQuitting) break;
       log('WARN', `Schedule unavailable; retrying in ${retryDelayMs / 1000}s`);
-      await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+      await new Promise(resolve => {
+        scheduleRetryTimer = setTimeout(() => {
+          scheduleRetryTimer = null;
+          resolve();
+        }, retryDelayMs);
+      });
     }
   })();
 
