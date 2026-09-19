@@ -168,6 +168,18 @@ window.setViewMode = function(mode) {
   panesContainer.classList.remove('panes-single', 'panes-split', 'panes-quad');
   panesContainer.classList.add(`panes-${mode}`);
 
+  let removedStale = 0;
+  panesContainer.querySelectorAll('.view-pane').forEach(pane => {
+    pane.querySelectorAll(':scope > .pane-mode-content').forEach(w => {
+      if (w.dataset.mode === mode) return;
+      const stale = w.querySelector('.pane-schedule-overlay');
+      if (stale) { stale.remove(); removedStale++; }
+    });
+  });
+  if (isDebug() && removedStale > 0) {
+    logToMain('[SCHED] mode-switch cleanup: removed ' + removedStale + ' stale overlay(s)');
+  }
+
   renderView();
 };
 
@@ -1217,7 +1229,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const startWidthPercent = stationColumnWidth;
 
       const onMouseMove = (moveEvent) => {
-        const overlay = document.querySelector('.pane-schedule-overlay');
+        const overlay = document.querySelector('.pane-mode-content.active .pane-schedule-overlay');
         if (!overlay) return;
 
         const overlayWidth = overlay.offsetWidth;
@@ -1327,7 +1339,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function refreshOpenOverlay() {
-    const openOverlay = document.querySelector('.pane-schedule-overlay');
+    const openOverlay = document.querySelector('.pane-mode-content.active .pane-schedule-overlay');
     if (!openOverlay) return;
 
     const wrapper = openOverlay.parentElement;
