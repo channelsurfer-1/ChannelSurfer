@@ -942,6 +942,9 @@ function showScheduleOverlay(pane, paneIndex, existingProgram) {
     if (otherOverlay) {
       const otherListContainer = otherOverlay.querySelector('.pane-schedule-list');
       if (otherListContainer) {
+        if (isDebug()) {
+          logToMain('[SCHED] save scroll pane ' + index + ' (other-close): ' + otherListContainer.scrollTop + ' (store was ' + scheduleScrollPositions[currentViewMode][index] + ')');
+        }
         scheduleScrollPositions[currentViewMode][index] = otherListContainer.scrollTop;
       }
 
@@ -988,6 +991,9 @@ function showScheduleOverlay(pane, paneIndex, existingProgram) {
   if (existingOverlay) {
     const existingListContainer = existingOverlay.querySelector('.pane-schedule-list');
     if (existingListContainer) {
+      if (isDebug()) {
+        logToMain('[SCHED] save scroll pane ' + paneIndex + ' (reopen): ' + existingListContainer.scrollTop + ' (store was ' + scheduleScrollPositions[currentViewMode][paneIndex] + ')');
+      }
       scheduleScrollPositions[currentViewMode][paneIndex] = existingListContainer.scrollTop;
     }
     existingOverlay.remove();
@@ -1020,6 +1026,9 @@ function showScheduleOverlay(pane, paneIndex, existingProgram) {
   populateScheduleList(listContainer, pane, paneIndex);
 
   listContainer.scrollTop = scheduleScrollPositions[currentViewMode][paneIndex] || 0;
+  if (isDebug()) {
+    logToMain('[SCHED] restore scroll pane ' + paneIndex + ': ' + listContainer.scrollTop);
+  }
 
   updateModeButtonIcons();
 }
@@ -1133,8 +1142,12 @@ function populateScheduleList(listContainer, pane, paneIndex) {
 
       hideTooltip();
 
-      const currentList = pane.querySelector('.pane-schedule-list');
+      const modeWrapper = getPaneWrapper(pane, currentViewMode, false);
+      const currentList = modeWrapper ? modeWrapper.querySelector('.pane-schedule-list') : null;
       if (currentList) {
+        if (isDebug()) {
+          logToMain('[SCHED] save scroll pane ' + paneIndex + ' (row-click, mode=' + currentViewMode + '): ' + currentList.scrollTop);
+        }
         scheduleScrollPositions[currentViewMode][paneIndex] = currentList.scrollTop;
       }
 
@@ -1254,15 +1267,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (guideStatusShownAt && Date.now() - guideStatusShownAt < GUIDE_STATUS_MIN_MS) {
         await new Promise(resolve => setTimeout(resolve, GUIDE_STATUS_MIN_MS - (Date.now() - guideStatusShownAt)));
       }
+      const hadDataBefore = scheduleData !== null;
       scheduleData = data;
       guideUnavailableSince = null;
       updateGuideStatusScreen();
-
-      scheduleScrollPositions = {
-        single: [0],
-        split: [0, 0],
-        quad: [0, 0, 0, 0]
-      };
+      if (isDebug()) {
+        logToMain('[SCHED] load OK; hadDataBefore=' + hadDataBefore);
+      }
 
       Object.values(viewStates).forEach(state => {
         state.forEach(program => {
@@ -1279,6 +1290,9 @@ document.addEventListener('DOMContentLoaded', () => {
       updateModeButtonIcons();
       renderView();
     } catch (err) {
+      if (isDebug()) {
+        logToMain('[SCHED] load failed (' + (err && err.message ? err.message : '?') + '); retry in 2s');
+      }
 
       setTimeout(loadSchedule, 2000);
     }
@@ -1330,6 +1344,9 @@ document.addEventListener('DOMContentLoaded', () => {
       listContainer.innerHTML = '';
       populateScheduleList(listContainer, pane, paneIndex);
       listContainer.scrollTop = scrollPos;
+      if (isDebug()) {
+        logToMain('[SCHED] minute-refresh pane ' + paneIndex + '; scheduleData=' + (scheduleData ? 'ok' : 'NULL') + '; scroll ' + scrollPos + ' -> ' + listContainer.scrollTop);
+      }
     }
   }
 
