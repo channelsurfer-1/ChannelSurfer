@@ -312,12 +312,6 @@ function hideUnmuteCurtain(wcId) {
 
   curtainHidden.add(wcId);
 
-  // Two rules:
-  //  1. Hide the #unmute overlay.
-  //  2. Neutralize the full-screen transparent click shield the site
-  //     injects as a direct child of body with z-index: 2147483647 (max int32).
-  //     pointer-events: none lets clicks pass through to the player beneath;
-  //     the element itself stays in the DOM in case the site needs it to exist.
   const script = `
     (function() {
       if (document.getElementById('cs-hide-unmute-style')) return false;
@@ -731,11 +725,13 @@ function createWindow() {
             log('HDR', '  wire-in Referer=' + (headers['Referer'] || headers['referer'] || '(none)') + ' Origin=' + (headers['Origin'] || headers['origin'] || '(none)'));
             log('HDR', '  rebuilt to 4-header curl-parity set');
           }
+          const naturalRef = headers['Referer'] || headers['referer'] || '';
+          const naturalOrigin = headers['Origin'] || headers['origin'] || '';
           callback({ cancel: false, requestHeaders: {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36',
             'Accept': '*/*',
-            'Origin': 'https://tiestep.top',
-            'Referer': 'https://tiestep.top/'
+            'Origin': naturalOrigin || 'https://tiestep.top',
+            'Referer': naturalRef || 'https://tiestep.top/'
           }});
           return;
         }
