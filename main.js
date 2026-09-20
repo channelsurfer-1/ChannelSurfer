@@ -21,14 +21,12 @@ let blockedDomainsLogged = new Set();
 let streamPlayerDomains = new Set();
 const trackedStreamWebviews = new Set();
 
-// Recovery dialog feature (stage 1): candidate tracking, runtime test allow-set,
-// and local additions merge. Inert until the stage-2 UI wires into it.
-const blockedDomainRefs = new Map();   // hostname -> { refHost, count, lastSeenMs }
-const runtimeAllowedDomains = new Set(); // session-only test allow-set
-let knownPassengers = new Set();       // domains that failed their recovery test
-const chainHosts = new Set();          // derived: hosts observed as streaming referrers or allowed subFrame hosts
-const shellHosts = new Set();          // seeded from baseStreamUrls; shell-ref alone implies ad unless the block was a subFrame
-let pendingPromotion = null;           // recovery stage 3: { domains, timer } while the 60s soak runs
+const blockedDomainRefs = new Map();
+const runtimeAllowedDomains = new Set();
+let knownPassengers = new Set();
+const chainHosts = new Set();
+const shellHosts = new Set();
+let pendingPromotion = null;
 
 // ---------- Logging ----------
 function log(category, message) {
@@ -133,7 +131,7 @@ async function loadConfig() {
 }
 // ---------- End remote config ----------
 
-// ---------- Local config additions (recovery dialog, stage 1) ----------
+// ---------- Local config additions ----------
 function getAdditionsPath() {
   return path.join(app.getPath('userData'), 'config-additions.json');
 }
@@ -213,7 +211,7 @@ function isStreamingContent(url) {
          url.includes('.pdf');
 }
 
-// ---------- Debug-mode helpers (produce no output when debug is disabled) ----------
+// ---------- Debug-mode helpers ----------
 const DEBUG_NOISE_REFERRERS = ['dlhd.st', 'dlstreams.st', 'dlive.sx', 'iplayer.is', 'summertisaridicu.org'];
 
 function truncateUrl(url, max) {
@@ -232,7 +230,21 @@ function isDebugNoise(details) {
 }
 // ---------- End debug-mode helpers ----------
 
-// ---------- webFrameMain diagnostic probe (debug-only) ----------
+// ---------- Player frame finder ----------
+function findPlayerFrame(wc) {
+  try {
+    const frames = wc.mainFrame.framesInSubtree;
+    for (const f of frames) {
+      if (f === wc.mainFrame) continue;
+      if (!f.url || !/^https?:/i.test(f.url)) continue;
+      return f;
+    }
+  } catch (_) {}
+  return null;
+}
+// ---------- End player frame finder ----------
+
+// ---------- webFrameMain diagnostic probe ----------
 const frameProbed = new Set();
 
 function probeTiestepFrame(wcId) {
@@ -258,11 +270,12 @@ function probeTiestepFrame(wcId) {
     log('FRAME', '  url=' + truncateUrl(f.url || '(no url)', 130));
   }
 
-  const target = frames.find(f => f.url && f.url.startsWith('https://tiestep.top/'));
+  const target = findPlayerFrame(wc);
   if (!target) {
-    log('FRAME', 'no tiestep.top frame found in subtree');
+    log('FRAME', 'no player frame found in subtree');
     return;
   }
+  log('FRAME', '  picked player frame url=' + truncateUrl(target.url || '(no url)', 130));
 
   const script = `
     (function() {
@@ -286,12 +299,7 @@ function probeTiestepFrame(wcId) {
 }
 // ---------- End webFrameMain diagnostic probe ----------
 
-// ---------- Curtain hide (runs in both debug and clean mode) ----------
-// The site overlays a <div id="unmute">CLICK HERE TO UNMUTE</div> on top of
-// the player. The video itself plays muted underneath (paused:false,
-// muted:true). Inject a <style> rule into the tiestep.top frame to hide it.
-// A style element survives the site re-creating the div, and the rule is
-// idempotent (guarded by the style element's own id).
+// ---------- Curtain hide + click-shield neutralizer ----------
 const curtainHidden = new Set();
 
 function hideUnmuteCurtain(wcId) {
@@ -299,19 +307,25 @@ function hideUnmuteCurtain(wcId) {
   const wc = webContents.fromId(wcId);
   if (!wc || wc.isDestroyed()) return;
 
-  let frames = [];
-  try { frames = wc.mainFrame.framesInSubtree; } catch (_) { return; }
-  const target = frames.find(f => f.url && f.url.startsWith('https://tiestep.top/'));
+  const target = findPlayerFrame(wc);
   if (!target) return;
 
   curtainHidden.add(wcId);
 
+  // Two rules:
+  //  1. Hide the #unmute overlay.
+  //  2. Neutralize the full-screen transparent click shield the site
+  //     injects as a direct child of body with z-index: 2147483647 (max int32).
+  //     pointer-events: none lets clicks pass through to the player beneath;
+  //     the element itself stays in the DOM in case the site needs it to exist.
   const script = `
     (function() {
       if (document.getElementById('cs-hide-unmute-style')) return false;
       const s = document.createElement('style');
       s.id = 'cs-hide-unmute-style';
-      s.textContent = '#unmute { display: none !important; }';
+      s.textContent =
+        '#unmute { display: none !important; }' +
+        'div[style*="z-index: 2147483647"] { pointer-events: none !important; }';
       (document.head || document.documentElement).appendChild(s);
       return true;
     })()
@@ -319,34 +333,134 @@ function hideUnmuteCurtain(wcId) {
 
   target.executeJavaScript(script, false)
     .then((injected) => {
-      if (debug.enabled) log('UNMUTE', 'curtain style ' + (injected ? 'injected' : 'already present') + ' wc=' + wcId);
+      if (debug.enabled) log('UNMUTE', 'curtain + shield neutralized ' + (injected ? 'injected' : 'already present') + ' wc=' + wcId);
     })
     .catch((err) => {
       curtainHidden.delete(wcId);
       if (debug.enabled) log('UNMUTE', 'hide failed: ' + (err && err.message ? err.message : '?'));
     });
 }
-// ---------- End curtain hide ----------
+// ---------- End curtain hide + click-shield neutralizer ----------
 
-// ---------- Cursor-poll control-pulse (main-process, primary source) ----------
-// The host renderer does not receive mousemove events over a loaded <webview>
-// guest — the guest process owns the pointer. Instead main polls the OS cursor
-// position and, when it is inside any active webview's screen rect AND has
-// moved since the last tick, injects a synthetic mousemove into that webview's
-// tiestep.top frame via webFrameMain.executeJavaScript. This mimics the real
-// mouse: pulse on movement, go silent when the cursor stops, and let the
-// player's own idle-hide timer run undisturbed (controls hide ~1s after the
-// last movement, matching the official site). On entry, we pulse once so the
-// controls show immediately.
-// Bounds are broadcast by the renderer every ~500 ms; entries not refreshed
-// within 1500 ms are dropped.
-const webviewBounds = new Map();   // wcId -> { x, y, w, h, ts } in screen coords
+// ---------- Player warm-up ----------
+const warmedUp = new Set();
+
+function warmUpPlayer(wcId) {
+  if (warmedUp.has(wcId)) return;
+  const wc = webContents.fromId(wcId);
+  if (!wc || wc.isDestroyed()) return;
+
+  const target = findPlayerFrame(wc);
+  if (!target) return;
+
+  warmedUp.add(wcId);
+
+  const script = `
+    (function() {
+      const v = document.querySelector('video') || document.body;
+      const r = v && v.getBoundingClientRect ? v.getBoundingClientRect() : { left:0, top:0, width:100, height:100 };
+      const x = (r.left || 0) + (r.width || 100) / 2;
+      const y = (r.top || 0) + (r.height || 100) / 2;
+      const opts = { clientX: x, clientY: y, bubbles: true, cancelable: true, view: window, button: 0 };
+      const ev = new MouseEvent('click', opts);
+      v.dispatchEvent(ev);
+      return true;
+    })()
+  `;
+
+  target.executeJavaScript(script, true)
+    .then(() => {
+      if (debug.enabled) log('WARM', 'warm-up click fired wc=' + wcId);
+    })
+    .catch((err) => {
+      warmedUp.delete(wcId);
+      if (debug.enabled) log('WARM', 'failed: ' + (err && err.message ? err.message : '?'));
+    });
+}
+// ---------- End player warm-up ----------
+
+// ---------- Click probe (debug-only) ----------
+const clickProbed = new Set();
+
+function instrumentClicks(wcId) {
+  if (!debug.enabled) return;
+  if (clickProbed.has(wcId)) return;
+  const wc = webContents.fromId(wcId);
+  if (!wc || wc.isDestroyed()) return;
+
+  const target = findPlayerFrame(wc);
+  if (!target) return;
+
+  clickProbed.add(wcId);
+
+  const script = `
+    (function() {
+      if (window.__csClickProbe) return false;
+      window.__csClickProbe = true;
+      const chain = (el) => {
+        const parts = [];
+        let n = 0;
+        while (el && n++ < 8) {
+          const t = el.tagName || '?';
+          const id = el.id ? '#' + el.id : '';
+          const cls = (el.className && el.className.toString().slice(0, 40).replace(/\\s+/g, '.')) || '';
+          parts.push(t + id + (cls ? '.' + cls : ''));
+          el = el.parentElement;
+        }
+        return parts.join(' < ');
+      };
+      const vstate = () => {
+        const v = document.querySelector('video');
+        if (!v) return 'no-video';
+        return 'muted=' + v.muted + ' vol=' + v.volume.toFixed(2) + ' paused=' + v.paused;
+      };
+      ['mousedown', 'click'].forEach(kind => {
+        document.addEventListener(kind, (e) => {
+          try {
+            const x = e.clientX, y = e.clientY;
+            const stack = (document.elementsFromPoint ? document.elementsFromPoint(x, y) : [])
+              .slice(0, 4)
+              .map(el => (el.tagName || '?') + (el.id ? '#' + el.id : '') + (el.className ? '.' + el.className.toString().slice(0, 30).replace(/\\s+/g, '.') : ''))
+              .join(' | ');
+            console.log('[CS-CLICK] ' + kind + ' (' + Math.round(x) + ',' + Math.round(y) + ') ' + vstate());
+            console.log('[CS-CLICK]   target-chain: ' + chain(e.target));
+            console.log('[CS-CLICK]   stack@point: ' + stack);
+            if (kind === 'click') {
+              setTimeout(() => {
+                try { console.log('[CS-CLICK] after150 ' + vstate()); } catch (_) {}
+              }, 150);
+            }
+          } catch (err) {
+            try { console.log('[CS-CLICK] err ' + err.message); } catch (_) {}
+          }
+        }, true);
+      });
+      return true;
+    })()
+  `;
+
+  target.executeJavaScript(script, false)
+    .then((injected) => {
+      if (debug.enabled) log('CLICK', 'click probe ' + (injected ? 'installed' : 'already present') + ' wc=' + wcId);
+    })
+    .catch((err) => {
+      clickProbed.delete(wcId);
+      if (debug.enabled) log('CLICK', 'probe failed: ' + (err && err.message ? err.message : '?'));
+    });
+}
+// ---------- End click probe ----------
+
+// ---------- Cursor-poll control-pulse ----------
+const CONTROL_PULSE_GRACE_MS = 4000;
+
+const webviewBounds = new Map();
 let cursorPollTimer = null;
 let cursorOverWcId = null;
-const lastPulseAt = new Map();     // wcId -> ts (per-webview throttle)
+const lastPulseAt = new Map();
 let jitterPhase = 0;
 let lastCursorX = -1;
 let lastCursorY = -1;
+let lastMoveAt = 0;
 
 ipcMain.on('webview-bounds', (event, payload) => {
   if (!payload || !Array.isArray(payload.entries)) return;
@@ -381,9 +495,7 @@ function pulseControls(wcId) {
   const wc = webContents.fromId(wcId);
   if (!wc || wc.isDestroyed()) return;
 
-  let frames = [];
-  try { frames = wc.mainFrame.framesInSubtree; } catch (_) { return; }
-  const target = frames.find(f => f.url && f.url.startsWith('https://tiestep.top/'));
+  const target = findPlayerFrame(wc);
   if (!target) return;
 
   jitterPhase = (jitterPhase + 1) % 8;
@@ -439,15 +551,19 @@ function startCursorPoll() {
       cursorOverWcId = hit;
       lastCursorX = -1;
       lastCursorY = -1;
+      lastMoveAt = 0;
     }
     if (hit === null) return;
     const moved = (pt.x !== lastCursorX || pt.y !== lastCursorY);
+    if (moved) lastMoveAt = now;
     lastCursorX = pt.x;
     lastCursorY = pt.y;
-    if (justEntered || moved) {
+    const withinGrace = (now - lastMoveAt) < CONTROL_PULSE_GRACE_MS;
+    if (justEntered || moved || withinGrace) {
       pulseControls(hit);
       if (debug.enabled) {
-        log('PULSE', 'sent wc=' + hit + ' jx=' + jitterPhase + (justEntered ? ' enter' : ' move'));
+        const why = justEntered ? 'enter' : (moved ? 'move' : 'keepalive');
+        log('PULSE', 'sent wc=' + hit + ' jx=' + jitterPhase + ' ' + why);
       }
     }
   }, 100);
@@ -673,6 +789,8 @@ function createWindow() {
         if (!trackedStreamWebviews.has(details.webContentsId)) return;
         if (details.statusCode >= 400) return;
         hideUnmuteCurtain(details.webContentsId);
+        warmUpPlayer(details.webContentsId);
+        instrumentClicks(details.webContentsId);
         if (debug.enabled) probeTiestepFrame(details.webContentsId);
         if (win && !win.isDestroyed()) {
           win.webContents.send('stream-attempt-success', {
@@ -880,9 +998,6 @@ app.whenReady().then(async () => {
     callback({ path: imagePath });
   });
 
-  // Window first: startup must never block on the network. The initial
-  // schedule fetch runs in the background and retries until it succeeds;
-  // the renderer learns the path via the 'schedule-ready' push.
   createWindow();
 
   startCursorPoll();
