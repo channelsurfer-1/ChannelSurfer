@@ -286,6 +286,48 @@ function probeTiestepFrame(wcId) {
 }
 // ---------- End webFrameMain diagnostic probe ----------
 
+// ---------- Curtain hide (runs in both debug and clean mode) ----------
+// The site overlays a <div id="unmute">CLICK HERE TO UNMUTE</div> on top of
+// the player. The video itself plays muted underneath (paused:false,
+// muted:true). Inject a <style> rule into the tiestep.top frame to hide it.
+// A style element survives the site re-creating the div, and the rule is
+// idempotent (guarded by the style element's own id).
+const curtainHidden = new Set();
+
+function hideUnmuteCurtain(wcId) {
+  if (curtainHidden.has(wcId)) return;
+  const wc = webContents.fromId(wcId);
+  if (!wc || wc.isDestroyed()) return;
+
+  let frames = [];
+  try { frames = wc.mainFrame.framesInSubtree; } catch (_) { return; }
+  const target = frames.find(f => f.url && f.url.startsWith('https://tiestep.top/'));
+  if (!target) return;
+
+  curtainHidden.add(wcId);
+
+  const script = `
+    (function() {
+      if (document.getElementById('cs-hide-unmute-style')) return false;
+      const s = document.createElement('style');
+      s.id = 'cs-hide-unmute-style';
+      s.textContent = '#unmute { display: none !important; }';
+      (document.head || document.documentElement).appendChild(s);
+      return true;
+    })()
+  `;
+
+  target.executeJavaScript(script, false)
+    .then((injected) => {
+      if (debug.enabled) log('UNMUTE', 'curtain style ' + (injected ? 'injected' : 'already present') + ' wc=' + wcId);
+    })
+    .catch((err) => {
+      curtainHidden.delete(wcId);
+      if (debug.enabled) log('UNMUTE', 'hide failed: ' + (err && err.message ? err.message : '?'));
+    });
+}
+// ---------- End curtain hide ----------
+
 // ---------- Cursor-poll control-pulse (main-process, primary source) ----------
 // The host renderer does not receive mousemove events over a loaded <webview>
 // guest — the guest process owns the pointer. Instead main polls the OS cursor
@@ -348,8 +390,6 @@ function pulseControls(wcId) {
   const jx = jitterPhase;
   const jy = (jitterPhase * 3) % 5;
 
-  // TODO (deferred): also hide the #unmute curtain here — one-time per stream.
-  // See session notes 2026-09-19. Do not add until the hover fix is verified stable.
   const script = `
     (function() {
       const v = document.querySelector('video');
@@ -632,6 +672,7 @@ function createWindow() {
         if (!details.url.includes('.m3u8')) return;
         if (!trackedStreamWebviews.has(details.webContentsId)) return;
         if (details.statusCode >= 400) return;
+        hideUnmuteCurtain(details.webContentsId);
         if (debug.enabled) probeTiestepFrame(details.webContentsId);
         if (win && !win.isDestroyed()) {
           win.webContents.send('stream-attempt-success', {
