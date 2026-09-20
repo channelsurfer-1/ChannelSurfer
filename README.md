@@ -116,6 +116,10 @@ Pre-built binaries for macOS, Windows, and Linux are available on the
 4. Switch from Single to Dual or Grid View to view more than one program at a time — populated panels resume instantly, right where they left off
 5. Closing a program returns the panel to the program guide
 
+- While a stream is playing, the player controls behave the same way as on the
+  source site — they fade out after about a second of mouse inactivity and
+  reappear as soon as you move the mouse over the video.
+
 If the primary stream URL fails, the app automatically tries alternate
 sources before giving up. A brief "Connecting..."
 message appears in the panel during this process.
@@ -148,6 +152,7 @@ for the shared config to refresh, then try again.
 
 1. **Try a different channel.** If others work, it's that one stream — try again later.
 2. **Look at the message in the panel.** "Could not connect to server." means every stream source failed to respond — usually your network connection, or the *source site* refusing connections (regional or IP-based). If other channels work, it's that one stream; try again later.
+3. **Restart the app.** The shared config updates at launch; a fix may already be live.
 
 ### The guide says "Unable to load program guide..."
 
@@ -156,7 +161,6 @@ almost always a network problem on your side, or the source being temporarily
 down. The app keeps retrying on its own — the guide appears as soon as a
 connection succeeds, no restart needed. Keep in mind that streams need
 network too, so if the guide can't load, channels won't play either.
-3. **Restart the app.** The shared config updates at launch; a fix may already be live.
 
 ### Getting detailed logs (debug mode)
 
@@ -208,7 +212,7 @@ GPL-3.0. See [LICENSE](LICENSE) for details.
 
 ## Credits
 
-Built by Kimi.ai and DeepSeek (Free Editions), under the direction of Joel Budgor.
+Built by vibe coding with Kimi.ai and DeepSeek (Free Editions), under the direction of Joel Budgor.
 
 ## Built With
 
