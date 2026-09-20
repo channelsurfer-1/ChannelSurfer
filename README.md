@@ -212,7 +212,7 @@ GPL-3.0. See [LICENSE](LICENSE) for details.
 
 ## Credits
 
-Built by vibe coding with Kimi.ai and DeepSeek (Free Editions), under the direction of Joel Budgor.
+Built by vibe coding with DeepSeek and Kimi.ai (Free Editions), under the direction of Joel Budgor.
 
 ## Built With
 
