@@ -77,6 +77,36 @@ function isDebug() {
   return debugMode;
 }
 
+// ---------- Control-pulse bounds broadcast ----------
+// The host renderer does not see mousemove over a loaded <webview> guest.
+// Main polls the OS cursor instead; this function feeds it the viewport-space
+// rects of every visible webview every ~500 ms. Main adds win.getContentBounds()
+// to convert to screen coordinates before comparing to the cursor position.
+function broadcastWebviewBounds() {
+  const panesContainer = document.getElementById('panes-container');
+  if (!panesContainer) return;
+  const entries = [];
+  panesContainer.querySelectorAll('webview').forEach(wv => {
+    if (wv.style.visibility === 'hidden') return;
+    let wcId;
+    try { wcId = wv.getWebContentsId(); } catch (_) { return; }
+    if (typeof wcId !== 'number') return;
+    const r = wv.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return;
+    entries.push({
+      webContentsId: wcId,
+      x: Math.round(r.left),
+      y: Math.round(r.top),
+      w: Math.round(r.width),
+      h: Math.round(r.height)
+    });
+  });
+  if (entries.length > 0) {
+    sendIpc('webview-bounds', { entries });
+  }
+}
+// ---------- End control-pulse bounds broadcast ----------
+
 // ---------- Per-mode pane content ----------
 
 function getPaneWrapper(pane, mode, createIfMissing) {
@@ -1424,6 +1454,9 @@ document.addEventListener('DOMContentLoaded', () => {
   updateGuideStatusScreen();
 
   renderView();
+
+  // Feed webview screen-space bounds to main's cursor-poll loop.
+  setInterval(broadcastWebviewBounds, 500);
 
   scheduleNextRefresh();
   scheduleOverlayRefresh();

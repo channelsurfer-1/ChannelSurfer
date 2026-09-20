@@ -4,7 +4,7 @@ const { app } = require('electron');
 
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
 
-const { BrowserWindow, session, ipcMain, protocol, clipboard } = require('electron');
+const { BrowserWindow, session, ipcMain, protocol, clipboard, webContents, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const debug = require('./src/debug');
@@ -214,8 +214,6 @@ function isStreamingContent(url) {
 }
 
 // ---------- Debug-mode helpers (produce no output when debug is disabled) ----------
-// Requests referred by these shell hosts are considered known noise for debug
-// logging. Streaming content is never treated as noise.
 const DEBUG_NOISE_REFERRERS = ['dlhd.st', 'dlstreams.st', 'dlive.sx', 'iplayer.is', 'summertisaridicu.org'];
 
 function truncateUrl(url, max) {
@@ -233,6 +231,188 @@ function isDebugNoise(details) {
   }
 }
 // ---------- End debug-mode helpers ----------
+
+// ---------- webFrameMain diagnostic probe (debug-only) ----------
+const frameProbed = new Set();
+
+function probeTiestepFrame(wcId) {
+  if (!debug.enabled) return;
+  if (frameProbed.has(wcId)) return;
+  const wc = webContents.fromId(wcId);
+  if (!wc || wc.isDestroyed()) {
+    log('FRAME', 'probe skip: wc ' + wcId + ' not available');
+    return;
+  }
+  frameProbed.add(wcId);
+
+  let frames = [];
+  try {
+    frames = wc.mainFrame.framesInSubtree;
+  } catch (err) {
+    log('FRAME', 'framesInSubtree failed: ' + (err && err.message ? err.message : '?'));
+    return;
+  }
+
+  log('FRAME', 'wc=' + wcId + ' frame count=' + frames.length);
+  for (const f of frames) {
+    log('FRAME', '  url=' + truncateUrl(f.url || '(no url)', 130));
+  }
+
+  const target = frames.find(f => f.url && f.url.startsWith('https://tiestep.top/'));
+  if (!target) {
+    log('FRAME', 'no tiestep.top frame found in subtree');
+    return;
+  }
+
+  const script = `
+    (function() {
+      const out = { title: document.title, href: location.href, videos: [], unmute: [] };
+      for (const v of document.querySelectorAll('video')) {
+        out.videos.push({ id: v.id || '', paused: !!v.paused, muted: !!v.muted, rs: v.readyState });
+      }
+      const el = document.getElementById('unmute');
+      if (el) out.unmute.push({ tag: el.tagName, id: el.id, text: (el.textContent || '').trim().slice(0, 40) });
+      return out;
+    })()
+  `;
+
+  target.executeJavaScript(script, false)
+    .then((res) => {
+      log('FRAME', 'dom: ' + JSON.stringify(res));
+    })
+    .catch((err) => {
+      log('FRAME', 'dom probe failed: ' + (err && err.message ? err.message : '?'));
+    });
+}
+// ---------- End webFrameMain diagnostic probe ----------
+
+// ---------- Cursor-poll control-pulse (main-process, primary source) ----------
+// The host renderer does not receive mousemove events over a loaded <webview>
+// guest — the guest process owns the pointer. Instead main polls the OS cursor
+// position and, when it is inside any active webview's screen rect AND has
+// moved since the last tick, injects a synthetic mousemove into that webview's
+// tiestep.top frame via webFrameMain.executeJavaScript. This mimics the real
+// mouse: pulse on movement, go silent when the cursor stops, and let the
+// player's own idle-hide timer run undisturbed (controls hide ~1s after the
+// last movement, matching the official site). On entry, we pulse once so the
+// controls show immediately.
+// Bounds are broadcast by the renderer every ~500 ms; entries not refreshed
+// within 1500 ms are dropped.
+const webviewBounds = new Map();   // wcId -> { x, y, w, h, ts } in screen coords
+let cursorPollTimer = null;
+let cursorOverWcId = null;
+const lastPulseAt = new Map();     // wcId -> ts (per-webview throttle)
+let jitterPhase = 0;
+let lastCursorX = -1;
+let lastCursorY = -1;
+
+ipcMain.on('webview-bounds', (event, payload) => {
+  if (!payload || !Array.isArray(payload.entries)) return;
+  if (!win || win.isDestroyed()) return;
+  const cb = win.getContentBounds();
+  const now = Date.now();
+  const seen = new Set();
+  for (const e of payload.entries) {
+    if (!e || typeof e.webContentsId !== 'number') continue;
+    if (typeof e.x !== 'number' || typeof e.y !== 'number' ||
+        typeof e.w !== 'number' || typeof e.h !== 'number') continue;
+    webviewBounds.set(e.webContentsId, {
+      x: cb.x + e.x,
+      y: cb.y + e.y,
+      w: e.w,
+      h: e.h,
+      ts: now
+    });
+    seen.add(e.webContentsId);
+  }
+  for (const id of Array.from(webviewBounds.keys())) {
+    if (!seen.has(id)) webviewBounds.delete(id);
+  }
+});
+
+function pulseControls(wcId) {
+  const now = Date.now();
+  const last = lastPulseAt.get(wcId) || 0;
+  if (now - last < 100) return;
+  lastPulseAt.set(wcId, now);
+
+  const wc = webContents.fromId(wcId);
+  if (!wc || wc.isDestroyed()) return;
+
+  let frames = [];
+  try { frames = wc.mainFrame.framesInSubtree; } catch (_) { return; }
+  const target = frames.find(f => f.url && f.url.startsWith('https://tiestep.top/'));
+  if (!target) return;
+
+  jitterPhase = (jitterPhase + 1) % 8;
+  const jx = jitterPhase;
+  const jy = (jitterPhase * 3) % 5;
+
+  // TODO (deferred): also hide the #unmute curtain here — one-time per stream.
+  // See session notes 2026-09-19. Do not add until the hover fix is verified stable.
+  const script = `
+    (function() {
+      const v = document.querySelector('video');
+      const r = v ? v.getBoundingClientRect() : { left: 0, top: 0, width: 200, height: 200 };
+      const jx = ${jx};
+      const jy = ${jy};
+      const x = r.left + r.width / 2 + jx;
+      const y = r.top + r.height / 2 + jy;
+      const opts = { clientX: x, clientY: y, bubbles: true, cancelable: true, view: window };
+      document.dispatchEvent(new MouseEvent('mousemove', opts));
+      if (v) {
+        v.dispatchEvent(new MouseEvent('mousemove', opts));
+        v.dispatchEvent(new MouseEvent('mouseover', opts));
+      }
+      return true;
+    })()
+  `;
+  target.executeJavaScript(script, false).catch(() => {});
+}
+
+function startCursorPoll() {
+  if (cursorPollTimer) return;
+  cursorPollTimer = setInterval(() => {
+    if (webviewBounds.size === 0) {
+      cursorOverWcId = null;
+      lastCursorX = -1;
+      lastCursorY = -1;
+      return;
+    }
+    if (!win || win.isDestroyed()) return;
+    let pt;
+    try { pt = screen.getCursorScreenPoint(); } catch (_) { return; }
+    const now = Date.now();
+    let hit = null;
+    for (const [wcId, r] of webviewBounds) {
+      if (now - r.ts > 1500) { webviewBounds.delete(wcId); continue; }
+      if (pt.x < r.x || pt.x >= r.x + r.w) continue;
+      if (pt.y < r.y || pt.y >= r.y + r.h) continue;
+      hit = wcId;
+      break;
+    }
+    const justEntered = (hit !== cursorOverWcId);
+    if (justEntered) {
+      if (debug.enabled) {
+        log('PULSE', hit === null ? 'cursor left' : ('cursor entered wc=' + hit));
+      }
+      cursorOverWcId = hit;
+      lastCursorX = -1;
+      lastCursorY = -1;
+    }
+    if (hit === null) return;
+    const moved = (pt.x !== lastCursorX || pt.y !== lastCursorY);
+    lastCursorX = pt.x;
+    lastCursorY = pt.y;
+    if (justEntered || moved) {
+      pulseControls(hit);
+      if (debug.enabled) {
+        log('PULSE', 'sent wc=' + hit + ' jx=' + jitterPhase + (justEntered ? ' enter' : ' move'));
+      }
+    }
+  }, 100);
+}
+// ---------- End cursor-poll control-pulse ----------
 
 function isSafeDomain(url) {
   if (isStreamPlayerPage(url) || isStreamingContent(url)) {
@@ -407,7 +587,7 @@ function createWindow() {
         if (debug.enabled && (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame')) {
           log('HDR', `nav ${(details.resourceType || '').padEnd(8)} ${truncateUrl(details.url, 110)}`);
           log('HDR', `  wire-in UA=${(headers['User-Agent'] || headers['user-agent'] || '(none)')}`);
-          log('HDR', `  wire-in Referer=${headers['Referer'] || headers['referer'] || '(none)'}`);
+          log('HDR', `  wire-in Referer=${(headers['Referer'] || headers['referer'] || '(none)')}`);
         }
 
         if (details.resourceType === 'mainFrame' && !headers['Referer'] && !headers['referer']) {
@@ -423,7 +603,7 @@ function createWindow() {
         if (debug.enabled && isStreamingContent(details.url)) {
           log('HDR', `${(details.resourceType || '').padEnd(8)} ${truncateUrl(details.url, 120)}`);
           log('HDR', `  out UA=${(headers['User-Agent'] || headers['user-agent'] || '(none)')}`);
-          log('HDR', `  out Referer=${headers['Referer'] || headers['referer'] || '(none)'} Origin=${headers['Origin'] || headers['origin'] || '(none)'}`);
+          log('HDR', `  out Referer=${(headers['Referer'] || headers['referer'] || '(none)')} Origin=${(headers['Origin'] || headers['origin'] || '(none)')}`);
         }
 
         try {
@@ -452,6 +632,7 @@ function createWindow() {
         if (!details.url.includes('.m3u8')) return;
         if (!trackedStreamWebviews.has(details.webContentsId)) return;
         if (details.statusCode >= 400) return;
+        if (debug.enabled) probeTiestepFrame(details.webContentsId);
         if (win && !win.isDestroyed()) {
           win.webContents.send('stream-attempt-success', {
             webContentsId: details.webContentsId
@@ -662,6 +843,8 @@ app.whenReady().then(async () => {
   // schedule fetch runs in the background and retries until it succeeds;
   // the renderer learns the path via the 'schedule-ready' push.
   createWindow();
+
+  startCursorPoll();
 
   let scheduleRetryTimer = null;
   let appQuitting = false;
