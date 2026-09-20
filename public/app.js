@@ -1171,11 +1171,11 @@ function populateScheduleList(listContainer, pane, paneIndex) {
 
     row.appendChild(programSpan);
 
-    row.dataset.tooltipTitle = programTitle;
-    row.dataset.tooltipDesc = programDescription;
-    row.addEventListener('mouseenter', showTooltip);
-    row.addEventListener('mousemove', moveTooltip);
-    row.addEventListener('mouseleave', hideTooltip);
+    programSpan.dataset.tooltipTitle = programTitle;
+    programSpan.dataset.tooltipDesc = programDescription;
+    programSpan.addEventListener('mouseenter', showTooltip);
+    programSpan.addEventListener('mousemove', moveTooltip);
+    programSpan.addEventListener('mouseleave', hideTooltip);
 
     row.addEventListener('click', (e) => {
       if (isResizingColumn) return;
