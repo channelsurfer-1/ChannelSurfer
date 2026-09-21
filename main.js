@@ -521,19 +521,12 @@ function hideUnmuteCurtain(wcId) {
             });
           } catch (e) {}
         })();
-        var csBtns = [];
-        document.querySelectorAll('.media-control button').forEach(function(b) { csBtns.push(b.className); });
-        var csDrawer = document.querySelector('.drawer-container');
         var csV = document.querySelector('video');
         return {
           found: !!csPlayer,
           clicked: csClicked,
-          vol: volPct,
           volClappr: csVolClappr,
-          volAfter: csV ? Math.round(csV.volume * 100) : -1,
-          winKeys: Object.keys(window).filter(function(k) { return /play|clappr|hls|p2p|engine|video|player|mute/i.test(k); }),
-          btns: csBtns,
-          drawer: csDrawer ? csDrawer.outerHTML.slice(0, 1500).replace(/\s+/g, ' ') : '(no drawer)'
+          volAfter: csV ? Math.round(csV.volume * 100) : -1
         };
       })(${volPct})
     `;
@@ -542,10 +535,7 @@ function hideUnmuteCurtain(wcId) {
       .then((result) => {
         if (debug.enabled) {
           const found = !!(result && result.found);
-          let msg = 'curtain+shield+audio; player=' + (found ? 'found' : 'NOT FOUND') + ' clicked=' + !!(result && result.clicked) + ' vol=' + volPct + ' volClappr=' + (result && typeof result.volClappr === 'number' ? result.volClappr : '?') + ' volAfter=' + (result && typeof result.volAfter === 'number' ? result.volAfter : '?') + ' wc=' + wcId;
-          if (result && Array.isArray(result.winKeys)) msg += ' winKeys=' + (result.winKeys.join(',') || '(none)');
-          if (result && Array.isArray(result.btns)) msg += ' btns=' + (result.btns.join(' | ') || '(none)');
-          log('UNMUTE', msg);
+          log('UNMUTE', 'curtain+shield+audio; player=' + (found ? 'found' : 'NOT FOUND') + ' clicked=' + !!(result && result.clicked) + ' volClappr=' + (result && typeof result.volClappr === 'number' ? result.volClappr : '?') + ' volAfter=' + (result && typeof result.volAfter === 'number' ? result.volAfter : '?') + ' wc=' + wcId);
         }
       })
       .catch((err) => {

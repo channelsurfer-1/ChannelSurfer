@@ -6,6 +6,9 @@ let guideStatusShownAt = null;
 let programTimers = new Map();
 let paneCount = 1;
 let focusedPaneIndex = 0;
+// Pane that should take audio focus when its stream next connects. Deferring
+// the switch to connect-time avoids silence while a guide is being browsed.
+let pendingFocusPane = -1;
 let tooltipTimer = null;
 let stationColumnWidth = 40;
 let isResizingColumn = false;
@@ -128,7 +131,12 @@ function applyAudioState() {
     }
     const soundBtn = pane.querySelector('.pane-sound-btn');
     if (soundBtn) {
-      soundBtn.textContent = (index === focusedPaneIndex) ? '\u{1F50A}' : '\u{1F507}';
+      // Only meaningful when there's a choice between panes; the icon shows
+      // which pane is audible (accented) vs silent (greyed, click to hear).
+      const active = (index === focusedPaneIndex);
+      soundBtn.style.display = (paneCount > 1) ? '' : 'none';
+      soundBtn.textContent = active ? '\u{1F50A}' : '\u{1F507}';
+      soundBtn.classList.toggle('active', active);
     }
   });
 }
@@ -156,7 +164,7 @@ function addView() {
   setContainerLayout();
   renderView();
   const newIndex = paneCount - 1;
-  focusPane(newIndex);
+  pendingFocusPane = newIndex;
   showScheduleOverlay(getPane(newIndex), newIndex, null);
   if (isDebug()) {
     logToMain('[VIEW] added pane ' + paneCount);
@@ -238,7 +246,7 @@ function ensurePlaceholder(pane, paneIndex) {
       if (i === -1 || i >= paneCount) return;
       if (panePrograms[i]) return;
       if (pane.querySelector('.pane-schedule-overlay')) return;
-      focusPane(i);
+      pendingFocusPane = i;
       showScheduleOverlay(pane, i, null);
     });
   }
@@ -504,11 +512,18 @@ function succeedStreamAttempt(attempt) {
     attempt.webview.style.visibility = '';
   }
   attachPaneLabel(attempt.pane, { stationName: attempt.stationName }, attempt.programTitle || attempt.stationName);
+  // Audio focus moves to this pane only if a pick/add designated it; this
+  // keeps failover reconnections from stealing audio back.
+  if (pendingFocusPane === attempt.paneIndex) {
+    pendingFocusPane = -1;
+    focusPane(attempt.paneIndex);
+  }
   applyAudioState();
 }
 
 function failStreamAttempt(attempt) {
   streamAttempts.delete(attempt.pane);
+  if (pendingFocusPane === attempt.paneIndex) pendingFocusPane = -1;
 
   const elapsed = attempt.overallStartTime
     ? ((Date.now() - attempt.overallStartTime) / 1000).toFixed(1)
@@ -1170,7 +1185,7 @@ function populateScheduleList(listContainer, pane, paneIndex) {
 
       scheduleProgramTimer(stationObj.dlhdId);
 
-      focusPane(paneIndex);
+      pendingFocusPane = paneIndex;
 
       attemptStream(pane, paneIndex, displayName, stationObj.dlhdId, programTitle);
     });
