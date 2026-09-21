@@ -299,8 +299,49 @@ function probeTiestepFrame(wcId) {
 }
 // ---------- End webFrameMain diagnostic probe ----------
 
-// ---------- Curtain hide + click-shield neutralizer ----------
+// ---------- Curtain hide + click-shield neutralizer + audio sync ----------
 const curtainHidden = new Set();
+
+// Volume inheritance state: last volume (0-100) observed on any live player,
+// learned when the cursor hovers a pane. -1 = nothing observed yet.
+let lastKnownVolumePct = -1;
+const lastVolumeReadAt = new Map();
+
+// Cheap volume read while the cursor is over a webview; feeds the
+// inheritance rule below. Throttled per webview.
+function readVolumeFrom(wcId) {
+  const now = Date.now();
+  const last = lastVolumeReadAt.get(wcId) || 0;
+  if (now - last < 500) return;
+  lastVolumeReadAt.set(wcId, now);
+  const wc = webContents.fromId(wcId);
+  if (!wc || wc.isDestroyed()) return;
+  const f = findPlayerFrame(wc);
+  if (!f) return;
+  f.executeJavaScript('(function(){var v=document.querySelector("video");return v?Math.round(v.volume*100):-1})()', true)
+    .then((v) => { if (typeof v === 'number' && v >= 0) lastKnownVolumePct = v; })
+    .catch(() => {});
+}
+
+// Inheritance rule: a newly connected stream starts at the volume of the
+// program that was playing when it was chosen (last observed volume);
+// otherwise at another live pane's volume; otherwise 50% so the user is
+// not blasted by a loudspeaker.
+async function resolveInitialVolumePct(wcId) {
+  if (lastKnownVolumePct >= 0) return lastKnownVolumePct;
+  for (const otherId of trackedStreamWebviews) {
+    if (otherId === wcId) continue;
+    const other = webContents.fromId(otherId);
+    if (!other || other.isDestroyed()) continue;
+    const f = findPlayerFrame(other);
+    if (!f) continue;
+    try {
+      const v = await f.executeJavaScript('(function(){var v=document.querySelector("video");return v?Math.round(v.volume*100):-1})()', true);
+      if (typeof v === 'number' && v >= 0) return v;
+    } catch (_) {}
+  }
+  return 50;
+}
 
 function hideUnmuteCurtain(wcId) {
   if (curtainHidden.has(wcId)) return;
@@ -312,29 +353,208 @@ function hideUnmuteCurtain(wcId) {
 
   curtainHidden.add(wcId);
 
-  const script = `
-    (function() {
-      if (document.getElementById('cs-hide-unmute-style')) return false;
-      const s = document.createElement('style');
-      s.id = 'cs-hide-unmute-style';
-      s.textContent =
-        '#unmute { display: none !important; }' +
-        'div[style*="z-index: 2147483647"] { pointer-events: none !important; }';
-      (document.head || document.documentElement).appendChild(s);
-      return true;
-    })()
-  `;
+  resolveInitialVolumePct(wcId).then((volPct) => {
+    const script = `
+      (function(volPct) {
+        if (document.getElementById('cs-hide-unmute-style')) return false;
+        const s = document.createElement('style');
+        s.id = 'cs-hide-unmute-style';
+        s.textContent =
+          '#unmute { display: none !important; }' +
+          'div[style*="z-index: 2147483647"] { pointer-events: none !important; }';
+        (document.head || document.documentElement).appendChild(s);
 
-  target.executeJavaScript(script, false)
-    .then((injected) => {
-      if (debug.enabled) log('UNMUTE', 'curtain + shield neutralized ' + (injected ? 'injected' : 'already present') + ' wc=' + wcId);
-    })
-    .catch((err) => {
-      curtainHidden.delete(wcId);
-      if (debug.enabled) log('UNMUTE', 'hide failed: ' + (err && err.message ? err.message : '?'));
-    });
+        // Start audio with the video and put the control bar in sync.
+        // The player boots muted to satisfy autoplay policy; with the
+        // autoplay-policy switch set in the main process, unmuted playback
+        // is allowed. Drive the player instance's own API when reachable
+        // (so its volume icon and segments reflect reality); force the raw
+        // <video> element as well, re-try shortly after (setup may
+        // re-assert mute), and keep an observer to defeat later re-mutes.
+        function csFindPlayer() {
+          const names = ['player', 'clapprPlayer', 'thePlayer', 'p2pPlayer', 'hlsPlayer', 'clappr'];
+          for (let i = 0; i < names.length; i++) {
+            try {
+              const c = window[names[i]];
+              if (c && typeof c.setVolume === 'function') return c;
+            } catch (e) {}
+          }
+          for (const k in window) {
+            try {
+              const c = window[k];
+              if (c && typeof c.setVolume === 'function' &&
+                  (typeof c.mute === 'function' || typeof c.unmute === 'function')) return c;
+            } catch (e) {}
+          }
+          return null;
+        }
+        const csPlayer = csFindPlayer();
+
+        // DOM-level sync: make the control bar reflect reality even when the
+        // player instance is unreachable. Re-applied by the observer below
+        // because Clappr re-renders the bar on state changes.
+        function csSyncDom(pct) {
+          pct = (typeof pct === 'number') ? pct : volPct;
+          document.querySelectorAll('.media-control .muted').forEach(function(el) {
+            el.classList.remove('muted');
+          });
+          var segs = document.querySelectorAll('.media-control .segmented-bar-element');
+          if (segs.length > 0) {
+            var fillCount = Math.ceil(segs.length * pct / 100);
+            segs.forEach(function(seg, i) {
+              if (i < fillCount) seg.classList.add('fill');
+              else seg.classList.remove('fill');
+            });
+          }
+          document.querySelectorAll('.media-control input[type="range"]').forEach(function(r) {
+            r.value = pct;
+          });
+        }
+
+        // One synthetic click on the player's own mute toggle flips its
+        // internal muted state — the sanctioned path; Clappr then swaps the
+        // icon SVG itself. Guarded: only clicks while something still shows
+        // muted, so repeated calls are idempotent (a bare second click would
+        // re-mute). Verified via drawer dump 2026-09-21: the toggle is
+        // div.drawer-icon[data-volume]; the muted SVG has the X baked into
+        // its path, so only a real toggle replaces it.
+        var csClicked = false;
+        function csClickMuteButton() {
+          var icon = document.querySelector('.drawer-icon[data-volume]') || document.querySelector('.drawer-icon');
+          var v = document.querySelector('video');
+          var looksMuted = (icon && icon.classList.contains('muted')) || (v && v.muted);
+          if (!looksMuted) return false;
+          if (icon) {
+            try { icon.click(); } catch (e) {}
+            csClicked = true;
+            return true;
+          }
+          return false;
+        }
+
+        // Set state through the player's OWN controls so its internal model
+        // matches what we want (the instance object is unreachable, but its
+        // UI is): click the mute toggle if still muted, and click the
+        // segmented-bar cell for the target volume so unmute later restores
+        // this level instead of the internal default (100). Element-level
+        // forcing is backstop only. No MutationObserver: deliberate user
+        // mutes must stick; startup retries cover setup-time re-mutes.
+        var csVolClappr = -1;
+        function csApplyAudio() {
+          csClickMuteButton();
+          // Clappr's VOLUME bar computes volume from POINTER coordinates and
+          // is hidden at injection time. NB: '.media-control .bar-container'
+          // matches the SEEK bar first — the volume bar lives in the drawer.
+          // Force it visible, measure, dispatch a positioned mouse sequence
+          // at the target percentage, restore.
+          var mc = document.querySelector('.media-control');
+          var bar = document.querySelector('.drawer-container .bar-container');
+          var saved = [];
+          if (mc && bar) {
+            [mc, bar].forEach(function(el) {
+              saved.push([el, el.getAttribute('style')]);
+              el.style.setProperty('display', 'block', 'important');
+              el.style.setProperty('visibility', 'visible', 'important');
+            });
+          }
+          function csFire(el, cx, cy) {
+            try {
+              ['mousedown', 'mouseup', 'click'].forEach(function(t) {
+                el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window, clientX: cx, clientY: cy }));
+              });
+            } catch (e) {}
+          }
+          var r = bar ? bar.getBoundingClientRect() : null;
+          if (r && r.width > 0) {
+            csFire(bar, r.left + r.width * (volPct / 100), r.top + r.height / 2);
+          }
+          // Retry on the segment only if the bar dispatch missed (covers
+          // handlers that read offsetX, which synthetic events zero out).
+          var vc = document.querySelector('video');
+          if (vc && Math.abs(vc.volume * 100 - volPct) > 5 && bar) {
+            var segs = bar.querySelectorAll('.segmented-bar-element');
+            if (segs.length > 0) {
+              var idx = Math.max(0, Math.min(segs.length - 1, Math.ceil(segs.length * volPct / 100) - 1));
+              var sr = segs[idx].getBoundingClientRect();
+              if (sr.width > 0) csFire(segs[idx], sr.right - 0.5, sr.top + sr.height / 2);
+            }
+          }
+          if (vc) csVolClappr = Math.round(vc.volume * 100);
+          saved.forEach(function(pair) {
+            if (pair[1] === null) pair[0].removeAttribute('style');
+            else pair[0].setAttribute('style', pair[1]);
+          });
+          // Element-level backstop for the audible level.
+          document.querySelectorAll('video').forEach(function(v) { v.volume = volPct / 100; v.muted = false; });
+          csSyncDom();
+        }
+        csApplyAudio();
+        setTimeout(csApplyAudio, 500);
+        setTimeout(csApplyAudio, 1500);
+
+        // Unmute-snap guard: this skin's unmute hard-snaps volume to 100%
+        // instead of the previous level. Remember the last unmuted volume
+        // and rewrite only the full-volume write that lands right after an
+        // unmute; user drags (including a deliberate drag to 100%) still
+        // count as the new remembered level.
+        (function() {
+          var v = document.querySelector('video');
+          if (!v) return;
+          var rem = volPct / 100;
+          var wasMuted = v.muted;
+          var unmutedAt = 0;
+          try {
+            v.addEventListener('volumechange', function() {
+              var now = Date.now();
+              var justUnmuted = wasMuted && !v.muted;
+              wasMuted = v.muted;
+              if (v.muted) return;
+              if (justUnmuted) unmutedAt = now;
+              if (v.volume === 1 && rem < 1 && (justUnmuted || now - unmutedAt < 300)) {
+                v.volume = rem;
+                // This skin repaints the bar only from its own event path, so
+                // repaint the segments to match the rewritten element level.
+                try { csSyncDom(Math.round(rem * 100)); } catch (e) {}
+                return;
+              }
+              if (Math.abs(v.volume - rem) > 0.001) rem = v.volume;
+            });
+          } catch (e) {}
+        })();
+        var csBtns = [];
+        document.querySelectorAll('.media-control button').forEach(function(b) { csBtns.push(b.className); });
+        var csDrawer = document.querySelector('.drawer-container');
+        var csV = document.querySelector('video');
+        return {
+          found: !!csPlayer,
+          clicked: csClicked,
+          vol: volPct,
+          volClappr: csVolClappr,
+          volAfter: csV ? Math.round(csV.volume * 100) : -1,
+          winKeys: Object.keys(window).filter(function(k) { return /play|clappr|hls|p2p|engine|video|player|mute/i.test(k); }),
+          btns: csBtns,
+          drawer: csDrawer ? csDrawer.outerHTML.slice(0, 1500).replace(/\s+/g, ' ') : '(no drawer)'
+        };
+      })(${volPct})
+    `;
+
+    target.executeJavaScript(script, false)
+      .then((result) => {
+        if (debug.enabled) {
+          const found = !!(result && result.found);
+          let msg = 'curtain+shield+audio; player=' + (found ? 'found' : 'NOT FOUND') + ' clicked=' + !!(result && result.clicked) + ' vol=' + volPct + ' volClappr=' + (result && typeof result.volClappr === 'number' ? result.volClappr : '?') + ' volAfter=' + (result && typeof result.volAfter === 'number' ? result.volAfter : '?') + ' wc=' + wcId;
+          if (result && Array.isArray(result.winKeys)) msg += ' winKeys=' + (result.winKeys.join(',') || '(none)');
+          if (result && Array.isArray(result.btns)) msg += ' btns=' + (result.btns.join(' | ') || '(none)');
+          log('UNMUTE', msg);
+        }
+      })
+      .catch((err) => {
+        curtainHidden.delete(wcId);
+        if (debug.enabled) log('UNMUTE', 'hide failed: ' + (err && err.message ? err.message : '?'));
+      });
+  }).catch(() => {});
 }
-// ---------- End curtain hide + click-shield neutralizer ----------
+// ---------- End curtain hide + click-shield neutralizer + audio sync ----------
 
 // ---------- Player warm-up ----------
 const warmedUp = new Set();
@@ -548,6 +768,7 @@ function startCursorPoll() {
       lastMoveAt = 0;
     }
     if (hit === null) return;
+    readVolumeFrom(hit);
     const moved = (pt.x !== lastCursorX || pt.y !== lastCursorY);
     if (moved) lastMoveAt = now;
     lastCursorX = pt.x;

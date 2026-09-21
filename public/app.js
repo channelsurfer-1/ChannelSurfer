@@ -4,38 +4,26 @@ const GUIDE_ERROR_THRESHOLD_MS = 15000;
 const GUIDE_STATUS_MIN_MS = 1000;
 let guideStatusShownAt = null;
 let programTimers = new Map();
-let currentViewMode = 'single';
+let paneCount = 1;
+let focusedPaneIndex = 0;
 let tooltipTimer = null;
 let stationColumnWidth = 40;
 let isResizingColumn = false;
 
-let viewStates = {
-  single: [null],
-  split: [null, null],
-  quad: [null, null, null, null]
-};
-
-let scheduleOverlayStates = {
-  single: [false],
-  split: [false, false],
-  quad: [false, false, false, false]
-};
-
-let scheduleScrollPositions = {
-  single: [0],
-  split: [0, 0],
-  quad: [0, 0, 0, 0]
-};
+// Per-pane state (arrays grow/shrink with paneCount; index 0-based).
+let panePrograms = [null];
+let paneOverlayOpen = [false];
+let paneScroll = [0];
 
 const BASE_STREAM_URL_FALLBACK = 'https://dlive.sx/stream/stream-';
 const STREAM_ATTEMPT_TIMEOUT_MS = 7000;
 
 let streamBaseUrls = [BASE_STREAM_URL_FALLBACK];
-const streamAttempts = new Map();
+const streamAttempts = new Map(); // pane element -> attempt
 let debugMode = false;
 const failedRecoveryCombos = new Set(); // recovery: tested-and-failed domain sets (session only)
-let pendingRecoveryTest = null;         // recovery: { key, wrapper, domains } while a test retry is in flight
-let pendingPromotionView = null;        // recovery: { wrapper, domains } while main runs the 60s soak
+let pendingRecoveryTest = null;         // recovery: { key, pane, domains } while a test retry is in flight
+let pendingPromotionView = null;        // recovery: { pane, domains } while main runs the 60s soak
 
 if (!document.getElementById('connecting-dots-style')) {
   const style = document.createElement('style');
@@ -47,15 +35,6 @@ if (!document.getElementById('connecting-dots-style')) {
     }
     .connecting-dots {
       animation: dots-blink 1s ease-in-out infinite;
-    }
-    .pane-mode-content {
-      display: none;
-      position: relative;
-      width: 100%;
-      height: 100%;
-    }
-    .pane-mode-content.active {
-      display: block;
     }
   `;
   document.head.appendChild(style);
@@ -107,115 +86,166 @@ function broadcastWebviewBounds() {
 }
 // ---------- End control-pulse bounds broadcast ----------
 
-// ---------- Per-mode pane content ----------
+// ---------- Pane helpers ----------
 
-function getPaneWrapper(pane, mode, createIfMissing) {
-  const selector = ':scope > .pane-mode-content[data-mode="' + mode + '"]';
-  let wrapper = pane.querySelector(selector);
-  if (!wrapper && createIfMissing) {
-    wrapper = document.createElement('div');
-    wrapper.className = 'pane-mode-content';
-    wrapper.dataset.mode = mode;
-    pane.appendChild(wrapper);
+function allPanes() {
+  const panesContainer = document.getElementById('panes-container');
+  return Array.from(panesContainer.querySelectorAll('.view-pane'));
+}
+
+function getPane(index) {
+  return allPanes()[index] || null;
+}
+
+function paneIndexOf(pane) {
+  return allPanes().indexOf(pane);
+}
+
+function setContainerLayout() {
+  const panesContainer = document.getElementById('panes-container');
+  panesContainer.classList.remove('panes-1', 'panes-2', 'panes-3', 'panes-4');
+  panesContainer.classList.add('panes-' + paneCount);
+}
+
+function applyPaneVisibility() {
+  allPanes().forEach((pane, index) => {
+    pane.style.display = index < paneCount ? '' : 'none';
+  });
+}
+
+function applyFocusStyles() {
+  allPanes().forEach((pane, index) => {
+    pane.classList.toggle('focused', index < paneCount && index === focusedPaneIndex);
+  });
+}
+
+function applyAudioState() {
+  allPanes().forEach((pane, index) => {
+    if (index >= paneCount) return;
+    const wv = pane.querySelector('webview');
+    if (wv) {
+      try { wv.setAudioMuted(index !== focusedPaneIndex); } catch (_) {}
+    }
+    const soundBtn = pane.querySelector('.pane-sound-btn');
+    if (soundBtn) {
+      soundBtn.textContent = (index === focusedPaneIndex) ? '\u{1F50A}' : '\u{1F507}';
+    }
+  });
+}
+
+function focusPane(index) {
+  if (index < 0 || index >= paneCount) return;
+  if (focusedPaneIndex === index) {
+    applyAudioState();
+    return;
   }
-  return wrapper;
+  focusedPaneIndex = index;
+  applyFocusStyles();
+  applyAudioState();
+  if (isDebug()) {
+    logToMain('[VIEW] audio focus -> pane ' + (index + 1));
+  }
 }
 
-function setWrapperAudioMuted(wrapper, muted) {
-  try {
-    const wv = wrapper.querySelector('webview');
-    if (wv) wv.setAudioMuted(muted);
-  } catch (_) {}
+function addView() {
+  if (paneCount >= 4) return;
+  paneCount++;
+  panePrograms.push(null);
+  paneOverlayOpen.push(false);
+  paneScroll.push(0);
+  setContainerLayout();
+  renderView();
+  const newIndex = paneCount - 1;
+  focusPane(newIndex);
+  showScheduleOverlay(getPane(newIndex), newIndex, null);
+  if (isDebug()) {
+    logToMain('[VIEW] added pane ' + paneCount);
+  }
 }
 
-function ensurePlaceholder(wrapper, pane, paneIndex) {
-  if (!wrapper.querySelector('.pane-placeholder')) {
+function closePane(index) {
+  const pane = getPane(index);
+  if (!pane) return;
+
+  cancelStreamAttempt(pane);
+  pane.innerHTML = '';
+  paneOverlayOpen[index] = false;
+
+  if (paneCount <= 1) {
+    // Closing the only pane just clears it back to an empty view.
+    panePrograms[0] = null;
+    paneScroll[0] = 0;
+    focusPane(0);
+    renderView();
+    return;
+  }
+
+  panePrograms.splice(index, 1);
+  paneOverlayOpen.splice(index, 1);
+  paneScroll.splice(index, 1);
+  paneCount--;
+
+  if (focusedPaneIndex > index) focusedPaneIndex--;
+  else if (focusedPaneIndex === index) focusedPaneIndex = Math.min(index, paneCount - 1);
+
+  setContainerLayout();
+  renderView();
+  if (isDebug()) {
+    logToMain('[VIEW] closed pane ' + (index + 1) + '; paneCount=' + paneCount);
+  }
+}
+
+function ensurePaneControls(pane) {
+  if (pane.querySelector('.pane-controls')) return;
+
+  const controls = document.createElement('div');
+  controls.className = 'pane-controls';
+
+  const soundBtn = document.createElement('button');
+  soundBtn.className = 'pane-sound-btn';
+  soundBtn.title = 'Play audio from this view';
+  soundBtn.textContent = '\u{1F507}';
+  soundBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    focusPane(paneIndexOf(pane));
+  });
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'pane-close-btn';
+  closeBtn.innerHTML = '&times;';
+  closeBtn.title = 'Close this view';
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closePane(paneIndexOf(pane));
+  });
+
+  controls.appendChild(soundBtn);
+  controls.appendChild(closeBtn);
+  pane.appendChild(controls);
+}
+
+function ensurePlaceholder(pane, paneIndex) {
+  if (!pane.querySelector('.pane-placeholder') && !pane.querySelector('webview') && !pane.querySelector('.pane-schedule-overlay')) {
     const placeholder = document.createElement('div');
     placeholder.className = 'pane-placeholder';
     placeholder.textContent = 'Click to select a program';
-    wrapper.appendChild(placeholder);
+    pane.appendChild(placeholder);
   }
-  if (!wrapper.dataset.clickBound) {
-    wrapper.dataset.clickBound = '1';
-    wrapper.addEventListener('click', () => {
-      if (viewStates[currentViewMode][paneIndex]) return;
-      if (wrapper.querySelector('.pane-schedule-overlay')) return;
-      showScheduleOverlay(pane, paneIndex, null);
+  if (!pane.dataset.clickBound) {
+    pane.dataset.clickBound = '1';
+    pane.addEventListener('click', () => {
+      const i = paneIndexOf(pane);
+      if (i === -1 || i >= paneCount) return;
+      if (panePrograms[i]) return;
+      if (pane.querySelector('.pane-schedule-overlay')) return;
+      focusPane(i);
+      showScheduleOverlay(pane, i, null);
     });
   }
+  ensurePaneControls(pane);
 }
 
-// ---------- End per-mode pane content ----------
-
-function updateModeButtonIcons() {
-  const singleBtn = document.querySelector('[data-mode="single"]');
-  if (singleBtn) {
-    const isFilled = viewStates.single[0] !== null;
-    singleBtn.innerHTML = isFilled
-      ? '<svg width="20" height="20" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" fill="currentColor" stroke="currentColor" stroke-width="1.5"/></svg>'
-      : '<svg width="20" height="20" viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>';
-  }
-
-  const splitBtn = document.querySelector('[data-mode="split"]');
-  if (splitBtn) {
-    const leftFilled = viewStates.split[0] !== null;
-    const rightFilled = viewStates.split[1] !== null;
-
-    splitBtn.innerHTML = `
-      <svg width="20" height="20" viewBox="0 0 16 16">
-        <rect x="2" y="2" width="6" height="12" fill="${leftFilled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5"/>
-        <rect x="8" y="2" width="6" height="12" fill="${rightFilled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5"/>
-      </svg>`;
-  }
-
-  const quadBtn = document.querySelector('[data-mode="quad"]');
-  if (quadBtn) {
-    const q1Filled = viewStates.quad[0] !== null;
-    const q2Filled = viewStates.quad[1] !== null;
-    const q3Filled = viewStates.quad[2] !== null;
-    const q4Filled = viewStates.quad[3] !== null;
-
-    quadBtn.innerHTML = `
-      <svg width="20" height="20" viewBox="0 0 16 16">
-        <rect x="2" y="2" width="6" height="6" fill="${q1Filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5"/>
-        <rect x="8" y="2" width="6" height="6" fill="${q2Filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5"/>
-        <rect x="2" y="8" width="6" height="6" fill="${q3Filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5"/>
-        <rect x="8" y="8" width="6" height="6" fill="${q4Filled ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5"/>
-      </svg>`;
-  }
-}
-
-window.setViewMode = function(mode) {
-  currentViewMode = mode;
-
-  document.querySelectorAll('.mode-button').forEach(btn => {
-    btn.classList.remove('active');
-  });
-  const activeBtn = document.querySelector(`[data-mode="${mode}"]`);
-  if (activeBtn) activeBtn.classList.add('active');
-
-  const panesContainer = document.getElementById('panes-container');
-  panesContainer.classList.remove('panes-single', 'panes-split', 'panes-quad');
-  panesContainer.classList.add(`panes-${mode}`);
-
-  let removedStale = 0;
-  panesContainer.querySelectorAll('.view-pane').forEach(pane => {
-    pane.querySelectorAll(':scope > .pane-mode-content').forEach(w => {
-      if (w.dataset.mode === mode) return;
-      const stale = w.querySelector('.pane-schedule-overlay');
-      if (stale) { stale.remove(); removedStale++; }
-    });
-  });
-  if (isDebug() && removedStale > 0) {
-    logToMain('[SCHED] mode-switch cleanup: removed ' + removedStale + ' stale overlay(s)');
-  }
-
-  renderView();
-};
-
-function getMaxPanes() {
-  return currentViewMode === 'single' ? 1 : currentViewMode === 'split' ? 2 : 4;
-}
+// ---------- End pane helpers ----------
 
 function extractChannelId(url) {
   const match = url.match(/stream-(\d+)\.php/);
@@ -251,13 +281,13 @@ function createWebview(title, url) {
   return webview;
 }
 
-function attachPaneLabel(wrapper, stationName, programTitle) {
+function buildPaneLabel(program, programName) {
   const label = document.createElement('div');
   label.className = 'pane-label';
 
   const logoImg = document.createElement('img');
   logoImg.className = 'pane-label-logo';
-  const logoFileName = stationName.replace(/ USA$/i, '').trim();
+  const logoFileName = program.stationName.replace(/ USA$/i, '').trim();
   logoImg.src = `../images/logos/badges/${encodeURIComponent(logoFileName)}.png`;
   logoImg.onerror = function() {
     this.style.display = 'none';
@@ -265,17 +295,21 @@ function attachPaneLabel(wrapper, stationName, programTitle) {
 
   const labelText = document.createElement('span');
   labelText.className = 'pane-label-text';
-  labelText.textContent = programTitle;
+  labelText.textContent = programName;
 
   label.appendChild(logoImg);
   label.appendChild(labelText);
-  wrapper.appendChild(label);
+  return label;
+}
+
+function attachPaneLabel(pane, program, programName) {
+  pane.appendChild(buildPaneLabel(program, programName));
 }
 
 // ---------- Stream attempt failover ----------
 
-function cancelStreamAttempt(wrapper) {
-  const attempt = streamAttempts.get(wrapper);
+function cancelStreamAttempt(pane) {
+  const attempt = streamAttempts.get(pane);
   if (!attempt) return;
   attempt.cancelled = true;
   if (attempt.timer) {
@@ -294,22 +328,20 @@ function cancelStreamAttempt(wrapper) {
     attempt.indicator.remove();
     attempt.indicator = null;
   }
-  streamAttempts.delete(wrapper);
+  streamAttempts.delete(pane);
 }
 
 function cancelAllStreamAttempts() {
-  for (const wrapper of Array.from(streamAttempts.keys())) {
-    cancelStreamAttempt(wrapper);
+  for (const pane of Array.from(streamAttempts.keys())) {
+    cancelStreamAttempt(pane);
   }
 }
 
 function attemptStream(pane, paneIndex, stationName, dlhdId, programTitle) {
-  const wrapper = getPaneWrapper(pane, currentViewMode, true);
-  cancelStreamAttempt(wrapper);
-  wrapper.innerHTML = '';
+  cancelStreamAttempt(pane);
+  pane.innerHTML = '';
 
   const attempt = {
-    wrapper: wrapper,
     pane: pane,
     paneIndex: paneIndex,
     stationName: stationName,
@@ -325,9 +357,10 @@ function attemptStream(pane, paneIndex, stationName, dlhdId, programTitle) {
     candidateStartTime: null
   };
 
-  streamAttempts.set(wrapper, attempt);
+  streamAttempts.set(pane, attempt);
   runStreamAttempt(attempt);
-  addPaneCloseButton(wrapper, pane, paneIndex);
+  ensurePaneControls(pane);
+  applyAudioState();
 }
 
 function runStreamAttempt(attempt) {
@@ -350,7 +383,7 @@ function runStreamAttempt(attempt) {
   const webview = createWebview(attempt.stationName, url);
   webview.style.visibility = 'hidden';
   attempt.webview = webview;
-  attempt.wrapper.appendChild(webview);
+  attempt.pane.appendChild(webview);
 
   const indicator = document.createElement('div');
   indicator.style.position = 'absolute';
@@ -371,7 +404,7 @@ function runStreamAttempt(attempt) {
   labelSpan.appendChild(dotsSpan);
   indicator.appendChild(labelSpan);
   attempt.indicator = indicator;
-  attempt.wrapper.appendChild(indicator);
+  attempt.pane.appendChild(indicator);
 
   const thisWebview = webview;
 
@@ -441,16 +474,16 @@ function advanceStreamAttempt(attempt) {
 }
 
 function succeedStreamAttempt(attempt) {
-  streamAttempts.delete(attempt.wrapper);
+  streamAttempts.delete(attempt.pane);
 
   const elapsed = attempt.candidateStartTime
     ? ((Date.now() - attempt.candidateStartTime) / 1000).toFixed(1)
     : '?';
   logToMain(`Stream connected in ${elapsed}s (candidate ${attempt.candidateIndex + 1}/${streamBaseUrls.length})`);
 
-  if (pendingRecoveryTest && pendingRecoveryTest.wrapper === attempt.wrapper) {
+  if (pendingRecoveryTest && pendingRecoveryTest.pane === attempt.pane) {
     logToMain('[RECOVERY] test PASSED, domains: ' + pendingRecoveryTest.key.split('|').join(', '));
-    pendingPromotionView = { wrapper: attempt.wrapper, domains: pendingRecoveryTest.domains };
+    pendingPromotionView = { pane: attempt.pane, domains: pendingRecoveryTest.domains };
     sendIpc('recovery-test-result', { domains: pendingRecoveryTest.domains, passed: true });
     pendingRecoveryTest = null;
   }
@@ -470,11 +503,12 @@ function succeedStreamAttempt(attempt) {
   if (attempt.webview) {
     attempt.webview.style.visibility = '';
   }
-  attachPaneLabel(attempt.wrapper, attempt.stationName, attempt.programTitle || attempt.stationName);
+  attachPaneLabel(attempt.pane, { stationName: attempt.stationName }, attempt.programTitle || attempt.stationName);
+  applyAudioState();
 }
 
 function failStreamAttempt(attempt) {
-  streamAttempts.delete(attempt.wrapper);
+  streamAttempts.delete(attempt.pane);
 
   const elapsed = attempt.overallStartTime
     ? ((Date.now() - attempt.overallStartTime) / 1000).toFixed(1)
@@ -506,15 +540,15 @@ function failStreamAttempt(attempt) {
   failure.style.textAlign = 'center';
   failure.style.padding = '20px';
   failure.textContent = 'Could not connect to server.';
-  attempt.wrapper.appendChild(failure);
+  attempt.pane.appendChild(failure);
 
-  if (pendingRecoveryTest && pendingRecoveryTest.wrapper === attempt.wrapper) {
+  if (pendingRecoveryTest && pendingRecoveryTest.pane === attempt.pane) {
     failedRecoveryCombos.add(pendingRecoveryTest.key);
     logToMain('[RECOVERY] test failed, combo remembered: ' + pendingRecoveryTest.key.split('|').join(', '));
     sendIpc('recovery-test-result', { domains: pendingRecoveryTest.domains, passed: false });
     pendingRecoveryTest = null;
   }
-  if (pendingPromotionView && pendingPromotionView.wrapper === attempt.wrapper) {
+  if (pendingPromotionView && pendingPromotionView.pane === attempt.pane) {
     pendingPromotionView = null;
   }
 
@@ -537,8 +571,8 @@ function mkRecoveryBtn(label, primary) {
   return b;
 }
 
-function showRecoverySuccess(wrapper, domains) {
-  const old = wrapper.querySelector('.recovery-overlay');
+function showRecoverySuccess(pane, domains) {
+  const old = pane.querySelector('.recovery-overlay');
   if (old) old.remove();
 
   const overlay = document.createElement('div');
@@ -589,14 +623,14 @@ function showRecoverySuccess(wrapper, domains) {
   doneBtn.addEventListener('click', () => overlay.remove());
 
   overlay.appendChild(box);
-  wrapper.appendChild(overlay);
+  pane.appendChild(overlay);
 }
 
 // Opens the recovery dialog inside the failed pane. Debug-gated by the caller.
 async function openRecoveryDialog(attempt) {
-  const wrapper = attempt.wrapper;
-  if (!wrapper) return;
-  const old = wrapper.querySelector('.recovery-overlay');
+  const pane = attempt.pane;
+  if (!pane) return;
+  const old = pane.querySelector('.recovery-overlay');
   if (old) old.remove();
 
   const overlay = document.createElement('div');
@@ -635,7 +669,7 @@ async function openRecoveryDialog(attempt) {
   box.appendChild(btns);
 
   overlay.appendChild(box);
-  wrapper.appendChild(overlay);
+  pane.appendChild(overlay);
   closeX.addEventListener('click', () => overlay.remove());
 
   let data;
@@ -716,7 +750,7 @@ async function openRecoveryDialog(attempt) {
       diag.textContent = 'That combination already failed this session — try a different selection.';
       return;
     }
-    pendingRecoveryTest = { key, wrapper: attempt.wrapper, domains: selected };
+    pendingRecoveryTest = { key, pane: attempt.pane, domains: selected };
     sendIpc('allow-recovery-domains', selected);
     logToMain('[RECOVERY] testing domains: ' + selected.join(', '));
     overlay.remove();
@@ -879,164 +913,100 @@ function scheduleProgramTimer(dlhdId) {
 }
 
 function updatePaneLabel(dlhdId, programName) {
-  const panesContainer = document.getElementById('panes-container');
-  const allPanes = panesContainer.querySelectorAll('.view-pane');
-  const viewState = viewStates[currentViewMode];
-
-  viewState.forEach((program, index) => {
+  allPanes().forEach((pane, index) => {
+    const program = index < paneCount ? panePrograms[index] : null;
     if (program && program.dlhdId === dlhdId) {
-      const pane = allPanes[index];
-      const wrapper = pane ? getPaneWrapper(pane, currentViewMode, false) : null;
-      if (wrapper) {
-        const existingLabel = wrapper.querySelector('.pane-label');
-        if (existingLabel) existingLabel.remove();
-
-        const label = document.createElement('div');
-        label.className = 'pane-label';
-
-        const logoImg = document.createElement('img');
-        logoImg.className = 'pane-label-logo';
-        const logoFileName = program.stationName.replace(/ USA$/i, '').trim();
-        logoImg.src = `../images/logos/badges/${encodeURIComponent(logoFileName)}.png`;
-        logoImg.onerror = function() {
-          this.style.display = 'none';
-        };
-
-        const labelText = document.createElement('span');
-        labelText.className = 'pane-label-text';
-        labelText.textContent = programName;
-
-        label.appendChild(logoImg);
-        label.appendChild(labelText);
-        wrapper.appendChild(label);
-      }
+      const existingLabel = pane.querySelector('.pane-label');
+      if (existingLabel) existingLabel.remove();
+      pane.appendChild(buildPaneLabel(program, programName));
     }
   });
 }
 
 function renderView() {
-  const panesContainer = document.getElementById('panes-container');
-  const allPanes = panesContainer.querySelectorAll('.view-pane');
-  const maxPanes = getMaxPanes();
-  const viewState = viewStates[currentViewMode];
+  applyPaneVisibility();
 
-  allPanes.forEach((pane, index) => {
-    pane.style.display = index < maxPanes ? 'block' : 'none';
-  });
-
-  for (let index = 0; index < maxPanes; index++) {
-    const pane = allPanes[index];
+  for (let index = 0; index < paneCount; index++) {
+    const pane = getPane(index);
     if (!pane) continue;
-    const program = viewState[index];
-    const wrapper = getPaneWrapper(pane, currentViewMode, true);
-
+    const program = panePrograms[index];
     if (program) {
-      const attempt = streamAttempts.get(wrapper);
-      const hasWebview = !!wrapper.querySelector('webview');
+      const attempt = streamAttempts.get(pane);
+      const hasWebview = !!pane.querySelector('webview');
       if (!attempt && !hasWebview) {
         attemptStream(pane, index, program.stationName, program.dlhdId, program.programName);
+      } else {
+        ensurePaneControls(pane);
       }
     } else {
-      ensurePlaceholder(wrapper, pane, index);
+      ensurePlaceholder(pane, index);
     }
   }
 
-  allPanes.forEach((pane, index) => {
-    const isVisible = index < maxPanes;
-    pane.querySelectorAll(':scope > .pane-mode-content').forEach(w => {
-      const active = isVisible && w.dataset.mode === currentViewMode;
-      w.classList.toggle('active', active);
-      setWrapperAudioMuted(w, !active);
-    });
-  });
+  applyFocusStyles();
+  applyAudioState();
 
-  if (currentViewMode === 'single' && !viewState[0] && scheduleData) {
-    showScheduleOverlay(allPanes[0], 0, null);
-    updateModeButtonIcons();
+  if (paneCount === 1 && !panePrograms[0] && scheduleData) {
+    showScheduleOverlay(getPane(0), 0, null);
     return;
   }
 
-  scheduleOverlayStates[currentViewMode].forEach((isOpen, index) => {
-    if (isOpen && index < maxPanes) {
-      const pane = allPanes[index];
-      if (!pane) return;
-      const wrapper = getPaneWrapper(pane, currentViewMode, false);
-      if (wrapper && !wrapper.querySelector('.pane-schedule-overlay')) {
-        showScheduleOverlay(pane, index, viewState[index] || null);
+  paneOverlayOpen.forEach((isOpen, index) => {
+    if (isOpen && index < paneCount) {
+      const pane = getPane(index);
+      if (pane && !pane.querySelector('.pane-schedule-overlay')) {
+        showScheduleOverlay(pane, index, panePrograms[index]);
       }
     }
   });
 
-  updateModeButtonIcons();
+  updateAddViewButtonVisibility();
 }
 
 function showScheduleOverlay(pane, paneIndex, existingProgram) {
-  const panesContainer = document.getElementById('panes-container');
-  const allPanes = panesContainer.querySelectorAll('.view-pane');
-  const maxPanes = getMaxPanes();
+  // One overlay at a time, app-wide: opening one closes the others.
+  allPanes().forEach((otherPane, index) => {
+    if (otherPane === pane || index >= paneCount) return;
 
-  allPanes.forEach((otherPane, index) => {
-    if (otherPane === pane || index >= maxPanes) return;
-    const otherWrapper = getPaneWrapper(otherPane, currentViewMode, false);
-    if (!otherWrapper) return;
-
-    const otherOverlay = otherWrapper.querySelector('.pane-schedule-overlay');
+    const otherOverlay = otherPane.querySelector('.pane-schedule-overlay');
     if (otherOverlay) {
       const otherListContainer = otherOverlay.querySelector('.pane-schedule-list');
       if (otherListContainer) {
         if (isDebug()) {
-          logToMain('[SCHED] save scroll pane ' + index + ' (other-close): ' + otherListContainer.scrollTop + ' (store was ' + scheduleScrollPositions[currentViewMode][index] + ')');
+          logToMain('[SCHED] save scroll pane ' + index + ' (other-close): ' + otherListContainer.scrollTop + ' (store was ' + paneScroll[index] + ')');
         }
-        scheduleScrollPositions[currentViewMode][index] = otherListContainer.scrollTop;
+        paneScroll[index] = otherListContainer.scrollTop;
       }
 
       otherOverlay.remove();
-      scheduleOverlayStates[currentViewMode][index] = false;
+      paneOverlayOpen[index] = false;
 
-      const otherProgram = viewStates[currentViewMode][index];
+      const otherProgram = index < paneCount ? panePrograms[index] : null;
       if (otherProgram) {
-        const existingWebview = otherWrapper.querySelector('webview');
+        const existingWebview = otherPane.querySelector('webview');
         if (existingWebview) {
           existingWebview.style.display = '';
         }
 
-        if (!otherWrapper.querySelector('.pane-label') && otherProgram.programName) {
-          const label = document.createElement('div');
-          label.className = 'pane-label';
-
-          const logoImg = document.createElement('img');
-          logoImg.className = 'pane-label-logo';
-          const logoFileName = otherProgram.stationName.replace(/ USA$/i, '').trim();
-          logoImg.src = `../images/logos/badges/${encodeURIComponent(logoFileName)}.png`;
-          logoImg.onerror = function() {
-            this.style.display = 'none';
-          };
-
-          const labelText = document.createElement('span');
-          labelText.className = 'pane-label-text';
-          labelText.textContent = otherProgram.programName;
-
-          label.appendChild(logoImg);
-          label.appendChild(labelText);
-          otherWrapper.appendChild(label);
+        if (!otherPane.querySelector('.pane-label') && otherProgram.programName) {
+          otherPane.appendChild(buildPaneLabel(otherProgram, otherProgram.programName));
         }
       } else {
-        ensurePlaceholder(otherWrapper, otherPane, index);
+        ensurePlaceholder(otherPane, index);
       }
     }
   });
 
-  const wrapper = getPaneWrapper(pane, currentViewMode, true);
-  scheduleOverlayStates[currentViewMode][paneIndex] = true;
+  paneOverlayOpen[paneIndex] = true;
 
-  const existingOverlay = wrapper.querySelector('.pane-schedule-overlay');
+  const existingOverlay = pane.querySelector('.pane-schedule-overlay');
   if (existingOverlay) {
     const existingListContainer = existingOverlay.querySelector('.pane-schedule-list');
     if (existingListContainer) {
       if (isDebug()) {
-        logToMain('[SCHED] save scroll pane ' + paneIndex + ' (reopen): ' + existingListContainer.scrollTop + ' (store was ' + scheduleScrollPositions[currentViewMode][paneIndex] + ')');
+        logToMain('[SCHED] save scroll pane ' + paneIndex + ' (reopen): ' + existingListContainer.scrollTop + ' (store was ' + paneScroll[paneIndex] + ')');
       }
-      scheduleScrollPositions[currentViewMode][paneIndex] = existingListContainer.scrollTop;
+      paneScroll[paneIndex] = existingListContainer.scrollTop;
     }
     existingOverlay.remove();
   }
@@ -1063,16 +1033,14 @@ function showScheduleOverlay(pane, paneIndex, existingProgram) {
   listContainer.className = 'pane-schedule-list';
   overlay.appendChild(listContainer);
 
-  wrapper.appendChild(overlay);
+  pane.appendChild(overlay);
 
   populateScheduleList(listContainer, pane, paneIndex);
 
-  listContainer.scrollTop = scheduleScrollPositions[currentViewMode][paneIndex] || 0;
+  listContainer.scrollTop = paneScroll[paneIndex] || 0;
   if (isDebug()) {
     logToMain('[SCHED] restore scroll pane ' + paneIndex + ': ' + listContainer.scrollTop);
   }
-
-  updateModeButtonIcons();
 }
 
 function populateScheduleList(listContainer, pane, paneIndex) {
@@ -1184,26 +1152,25 @@ function populateScheduleList(listContainer, pane, paneIndex) {
 
       hideTooltip();
 
-      const modeWrapper = getPaneWrapper(pane, currentViewMode, false);
-      const currentList = modeWrapper ? modeWrapper.querySelector('.pane-schedule-list') : null;
+      const currentList = pane.querySelector('.pane-schedule-list');
       if (currentList) {
         if (isDebug()) {
-          logToMain('[SCHED] save scroll pane ' + paneIndex + ' (row-click, mode=' + currentViewMode + '): ' + currentList.scrollTop);
+          logToMain('[SCHED] save scroll pane ' + paneIndex + ' (row-click): ' + currentList.scrollTop);
         }
-        scheduleScrollPositions[currentViewMode][paneIndex] = currentList.scrollTop;
+        paneScroll[paneIndex] = currentList.scrollTop;
       }
 
-      viewStates[currentViewMode][paneIndex] = {
+      panePrograms[paneIndex] = {
         stationName: displayName,
         dlhdId: stationObj.dlhdId,
         programName: programTitle
       };
 
-      scheduleOverlayStates[currentViewMode][paneIndex] = false;
+      paneOverlayOpen[paneIndex] = false;
 
       scheduleProgramTimer(stationObj.dlhdId);
 
-      updateModeButtonIcons();
+      focusPane(paneIndex);
 
       attemptStream(pane, paneIndex, displayName, stationObj.dlhdId, programTitle);
     });
@@ -1212,35 +1179,13 @@ function populateScheduleList(listContainer, pane, paneIndex) {
   });
 }
 
-function addPaneCloseButton(wrapper, pane, paneIndex) {
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'pane-close-btn';
-  closeBtn.innerHTML = '&times;';
-  closeBtn.title = 'Close stream';
-
-  closeBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-
-    cancelStreamAttempt(wrapper);
-
-    viewStates[currentViewMode][paneIndex] = null;
-    scheduleOverlayStates[currentViewMode][paneIndex] = false;
-    updateModeButtonIcons();
-
-    wrapper.innerHTML = '';
-
-    showScheduleOverlay(pane, paneIndex, null);
-  });
-
-  wrapper.appendChild(closeBtn);
-}
-
 document.addEventListener('DOMContentLoaded', () => {
   let schedulePath = '../data/schedule.json';
 
-  document.querySelectorAll('.mode-button').forEach(btn => {
-    btn.addEventListener('click', () => setViewMode(btn.dataset.mode));
-  });
+  const addViewBtn = document.getElementById('add-view-btn');
+  if (addViewBtn) {
+    addViewBtn.addEventListener('click', () => addView());
+  }
 
   document.addEventListener('click', (e) => {
     if (isResizingColumn) {
@@ -1259,7 +1204,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const startWidthPercent = stationColumnWidth;
 
       const onMouseMove = (moveEvent) => {
-        const overlay = document.querySelector('.pane-mode-content.active .pane-schedule-overlay');
+        const overlay = document.querySelector('.view-pane .pane-schedule-overlay');
         if (!overlay) return;
 
         const overlayWidth = overlay.offsetWidth;
@@ -1317,19 +1262,16 @@ document.addEventListener('DOMContentLoaded', () => {
         logToMain('[SCHED] load OK; hadDataBefore=' + hadDataBefore);
       }
 
-      Object.values(viewStates).forEach(state => {
-        state.forEach(program => {
-          if (program) {
-            const info = getCurrentProgramInfo(program.dlhdId);
-            if (info) {
-              updatePaneLabel(program.dlhdId, info.programName);
-            }
-            scheduleProgramTimer(program.dlhdId);
+      panePrograms.forEach(program => {
+        if (program) {
+          const info = getCurrentProgramInfo(program.dlhdId);
+          if (info) {
+            updatePaneLabel(program.dlhdId, info.programName);
           }
-        });
+          scheduleProgramTimer(program.dlhdId);
+        }
       });
 
-      updateModeButtonIcons();
       renderView();
     } catch (err) {
       if (isDebug()) {
@@ -1369,19 +1311,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function refreshOpenOverlay() {
-    const openOverlay = document.querySelector('.pane-mode-content.active .pane-schedule-overlay');
+    const openOverlay = document.querySelector('.view-pane .pane-schedule-overlay');
     if (!openOverlay) return;
 
-    const wrapper = openOverlay.parentElement;
-    const pane = wrapper ? wrapper.parentElement : null;
+    const pane = openOverlay.parentElement;
     if (!pane) return;
 
-    const panesContainer = document.getElementById('panes-container');
-    const paneIndex = Array.from(panesContainer.querySelectorAll('.view-pane')).indexOf(pane);
+    const paneIndex = paneIndexOf(pane);
+    if (paneIndex === -1 || paneIndex >= paneCount) return;
 
     const listContainer = openOverlay.querySelector('.pane-schedule-list');
 
-    if (listContainer && paneIndex !== -1) {
+    if (listContainer) {
       const scrollPos = listContainer.scrollTop;
       listContainer.innerHTML = '';
       populateScheduleList(listContainer, pane, paneIndex);
@@ -1432,11 +1373,11 @@ document.addEventListener('DOMContentLoaded', () => {
     window.channelSurfer.onRecoveryPromoted((payload) => {
       if (!payload || !Array.isArray(payload.domains)) return;
       if (!pendingPromotionView) return;
-      const wrapper = pendingPromotionView.wrapper;
+      const pane = pendingPromotionView.pane;
       const domains = payload.domains;
       pendingPromotionView = null;
-      if (!wrapper || !wrapper.isConnected) return;
-      showRecoverySuccess(wrapper, domains);
+      if (!pane || !pane.isConnected) return;
+      showRecoverySuccess(pane, domains);
     });
   } else {
     loadSchedule();
@@ -1453,6 +1394,7 @@ document.addEventListener('DOMContentLoaded', () => {
   guideStatusShownAt = Date.now();
   updateGuideStatusScreen();
 
+  setContainerLayout();
   renderView();
 
   // Feed webview screen-space bounds to main's cursor-poll loop.
@@ -1461,3 +1403,8 @@ document.addEventListener('DOMContentLoaded', () => {
   scheduleNextRefresh();
   scheduleOverlayRefresh();
 });
+
+function updateAddViewButtonVisibility() {
+  const btn = document.getElementById('add-view-btn');
+  if (btn) btn.classList.toggle('hidden', paneCount >= 4);
+}

@@ -168,17 +168,27 @@ body {
   min-width: 0;
 }
 
-#panes-container.panes-single {
+#panes-container.panes-1 {
   grid-template-columns: 1fr;
   grid-template-rows: 1fr;
 }
 
-#panes-container.panes-split {
+#panes-container.panes-2 {
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr;
 }
 
-#panes-container.panes-quad {
+#panes-container.panes-3 {
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+#panes-container.panes-3 .view-pane[data-pane="1"] {
+  grid-column: 1 / 2;
+  grid-row: 1 / 3;
+}
+
+#panes-container.panes-4 {
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr 1fr;
 }
@@ -196,6 +206,12 @@ body {
 .view-pane:hover {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Focused pane: the one whose audio plays. Stronger ring than hover. */
+.view-pane.focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
 }
 
 .view-pane webview {
@@ -217,6 +233,37 @@ body {
 .view-pane .pane-placeholder:hover {
   color: var(--accent);
   background-color: var(--overlay-placeholder-hover);
+}
+
+/* =============================================
+   ADD-VIEW BUTTON (floating "+")
+   ============================================= */
+#add-view-btn {
+  position: fixed;
+  top: 11px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: var(--accent);
+  color: var(--bg-main);
+  border: none;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+#add-view-btn:hover {
+  background-color: var(--accent-light);
+}
+
+#add-view-btn.hidden {
+  display: none;
 }
 
 /* =============================================
@@ -383,7 +430,7 @@ body {
 }
 
 /* =============================================
-   PANE LABEL & CLOSE BUTTON
+   PANE LABEL & HOST CONTROLS (sound / close)
    ============================================= */
 .pane-label {
   position: absolute;
@@ -397,7 +444,7 @@ body {
   font-weight: 600;
   z-index: 10;
   pointer-events: none;
-  max-width: calc(100% - 60px);
+  max-width: calc(100% - 80px);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -413,63 +460,48 @@ body {
   flex-shrink: 0;
 }
 
-.pane-close-btn {
+.pane-controls {
   position: absolute;
   top: 8px;
   right: 8px;
+  display: flex;
+  gap: 6px;
+  z-index: 20;
+}
+
+.pane-sound-btn,
+.pane-close-btn {
   width: 28px;
   height: 28px;
   background-color: var(--overlay-bg);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
   border-radius: 50%;
-  font-size: 1.1rem;
+  font-size: 1rem;
   line-height: 1;
   cursor: pointer;
-  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+}
+
+.pane-sound-btn {
+  font-size: 0.85rem;
+}
+
+.pane-sound-btn:hover {
+  background-color: var(--overlay-accent-hover);
+  border-color: var(--accent);
+}
+
+.pane-close-btn {
+  font-size: 1.1rem;
 }
 
 .pane-close-btn:hover {
   background-color: var(--overlay-danger-hover);
   border-color: var(--danger);
-}
-
-/* =============================================
-   MODE SELECTOR
-   ============================================= */
-#mode-selector {
-  display: flex;
-  gap: 4px;
-  background-color: var(--bg-pane);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 3px;
-}
-
-.mode-button {
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 5px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.15s ease, color 0.15s ease;
-}
-
-.mode-button:hover {
-  background-color: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.mode-button.active {
-  background-color: var(--accent);
-  color: var(--bg-main);
 }
 
 webview {

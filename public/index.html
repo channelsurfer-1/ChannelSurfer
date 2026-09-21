@@ -15,39 +15,20 @@
     </div>
 
     <div id="top-bar-right">
-      <!-- Mode selector -->
-      <div id="mode-selector">
-        <button class="mode-button active" data-mode="single" title="Single View">
-          <svg width="20" height="20" viewBox="0 0 16 16">
-            <rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/>
-          </svg>
-        </button>
-        <button class="mode-button" data-mode="split" title="Split View">
-          <svg width="20" height="20" viewBox="0 0 16 16">
-            <rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/>
-            <line x1="8" y1="2" x2="8" y2="14" stroke="currentColor" stroke-width="1.5"/>
-          </svg>
-        </button>
-        <button class="mode-button" data-mode="quad" title="Quad View">
-          <svg width="20" height="20" viewBox="0 0 16 16">
-            <rect x="2" y="2" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/>
-            <line x1="8" y1="2" x2="8" y2="14" stroke="currentColor" stroke-width="1.5"/>
-            <line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" stroke-width="1.5"/>
-          </svg>
-        </button>
-      </div>
     </div>
   </div>
 
   <div id="view-layout">
     <!-- Panes area -->
-    <div id="panes-container" class="panes-single">
+    <div id="panes-container" class="panes-1">
       <div class="view-pane" data-pane="1"></div>
       <div class="view-pane" data-pane="2"></div>
       <div class="view-pane" data-pane="3"></div>
       <div class="view-pane" data-pane="4"></div>
     </div>
   </div>
+
+  <button id="add-view-btn" title="Add a view">+</button>
 
   <div id="tooltip"></div>
   <script src="app.js"></script>
