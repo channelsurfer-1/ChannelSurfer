@@ -353,6 +353,61 @@ function hideUnmuteCurtain(wcId) {
 
   curtainHidden.add(wcId);
 
+  if (audioFocusByWc.get(wcId) === false) {
+    // Connected into a non-focused pane: curtain + shield + snap guard
+    // only. The player stays muted — the honest state for an inactive pane.
+    // A later focus-in unmutes it via PANE_FOCUS_SYNC_SCRIPT; the guard
+    // below rewrites that unmute's 100% snap back to 50% and repaints the
+    // segments (this skin repaints only from its own event path).
+    const script = `
+      (function() {
+        if (document.getElementById('cs-hide-unmute-style')) return false;
+        const s = document.createElement('style');
+        s.id = 'cs-hide-unmute-style';
+        s.textContent =
+          '#unmute { display: none !important; }' +
+          'div[style*="z-index: 2147483647"] { pointer-events: none !important; }';
+        (document.head || document.documentElement).appendChild(s);
+        var rem = 0.5;
+        const v = document.querySelector('video');
+        if (v) {
+          var wasMuted = v.muted;
+          var unmutedAt = 0;
+          try {
+            v.addEventListener('volumechange', function() {
+              var now = Date.now();
+              var justUnmuted = wasMuted && !v.muted;
+              wasMuted = v.muted;
+              if (v.muted) return;
+              if (justUnmuted) unmutedAt = now;
+              if (v.volume === 1 && rem < 1 && (justUnmuted || now - unmutedAt < 300)) {
+                v.volume = rem;
+                var segs = document.querySelectorAll('.media-control .segmented-bar-element');
+                var fillCount = Math.ceil(segs.length * rem);
+                for (var i = 0; i < segs.length; i++) {
+                  if (i < fillCount) segs[i].classList.add('fill');
+                  else segs[i].classList.remove('fill');
+                }
+                return;
+              }
+              if (Math.abs(v.volume - rem) > 0.001) rem = v.volume;
+            });
+          } catch (e) {}
+        }
+        return true;
+      })()
+    `;
+    target.executeJavaScript(script, false)
+      .then((injected) => {
+        if (debug.enabled) log('UNMUTE', 'curtain+shield only, pane unfocused ' + (injected ? 'injected' : 'already present') + ' wc=' + wcId);
+      })
+      .catch((err) => {
+        curtainHidden.delete(wcId);
+        if (debug.enabled) log('UNMUTE', 'hide failed: ' + (err && err.message ? err.message : '?'));
+      });
+    return;
+  }
+
   resolveInitialVolumePct(wcId).then((volPct) => {
     const script = `
       (function(volPct) {
@@ -774,6 +829,59 @@ function startCursorPoll() {
   }, 100);
 }
 // ---------- End cursor-poll control-pulse ----------
+
+// ---------- Pane audio focus sync ----------
+// The renderer tells us which stream webviews are audible (corner-button
+// focus model). Two things follow: (1) the inactive pane's volume drawer
+// is dimmed and pointer-events-disabled, so its controls can never be
+// toggled into a meaningless state — programmatic clicks (our own sync)
+// bypass pointer-events; (2) the player's mute toggle is driven to match,
+// so the control bar and the corner buttons always agree. A stream that
+// connects into an unfocused pane skips the startup unmute (stays muted).
+const audioFocusByWc = new Map();
+
+const PANE_FOCUS_SYNC_SCRIPT = (focused) => `
+  (function(focused) {
+    var st = document.getElementById('cs-focus-dim');
+    if (!st) {
+      st = document.createElement('style');
+      st.id = 'cs-focus-dim';
+      (document.head || document.documentElement).appendChild(st);
+    }
+    st.textContent = focused
+      ? ''
+      : '.media-control .drawer-container { opacity: 0.3 !important; pointer-events: none !important; }';
+    var icon = document.querySelector('.drawer-icon[data-volume]') || document.querySelector('.drawer-icon');
+    if (!icon) return 'no-icon';
+    var isMuted = icon.classList.contains('muted');
+    if (focused && isMuted) {
+      try { icon.click(); } catch (e) {}
+      return 'unmuted';
+    }
+    if (!focused && !isMuted) {
+      try { icon.click(); } catch (e) {}
+      return 'muted';
+    }
+    return 'no-op';
+  })(${focused})
+`;
+
+ipcMain.on('set-pane-audio-focus', (event, payload) => {
+  if (!payload || typeof payload.webContentsId !== 'number') return;
+  const id = payload.webContentsId;
+  const focused = payload.focused === true;
+  audioFocusByWc.set(id, focused);
+  const wc = webContents.fromId(id);
+  if (!wc || wc.isDestroyed()) return;
+  const f = findPlayerFrame(wc);
+  if (!f) return;
+  f.executeJavaScript(PANE_FOCUS_SYNC_SCRIPT(focused), false)
+    .then((action) => {
+      if (debug.enabled && action !== 'no-icon') log('FOCUS', 'pane sync ' + action + ' wc=' + id);
+    })
+    .catch(() => {});
+});
+// ---------- End pane audio focus sync ----------
 
 function isSafeDomain(url) {
   if (isStreamPlayerPage(url) || isStreamingContent(url)) {

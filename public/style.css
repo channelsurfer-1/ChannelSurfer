@@ -202,13 +202,15 @@ body {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-/* Hover highlighting - works because CSS :hover fires even over webviews */
-.view-pane:hover {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+/* Hover on a NON-focused pane: weak, neutral hint only — must never be
+   mistaken for the focused pane's accent ring (CSS :hover fires even
+   over webviews). */
+.view-pane:not(.focused):hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 1px var(--border-strong);
 }
 
-/* Focused pane: the one whose audio plays. Stronger ring than hover. */
+/* Focused pane: the one whose audio plays. The only loud signal. */
 .view-pane.focused {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent);

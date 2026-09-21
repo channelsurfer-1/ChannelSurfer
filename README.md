@@ -23,19 +23,23 @@ A desktop application for browsing and watching live TV streams with a rich, mod
 
 ### Program Guide
 
-![](./documentation/Program-Guide.png)
+![](./documentation/Schedule-Only.png)
 
-### Single View
+### Single View Modre
 
-![](./documentation/Single-View-Mode.png)
+![](./documentation/Single-View.png)
 
-### Dual View
+### Dual View Mode
 
-![](./documentation/Dual-View-Mode.png)
+![](./documentation/Dual-View.png)
 
-### Grid View
+### Trio View Mode
 
-![](./documentation/Grid-View-Mode.png)
+![](./documentation/Trio-View.png)
+
+### Grid View Mode
+
+![](./documentation/Grid-View.png)
 
 ## Features
 
@@ -49,18 +53,28 @@ Browse current programming across all available stations.
 
 ### 🖥️ Multi-View Watching
 
-Watch multiple channels at once.
+Watch up to four channels at once.
 
-- **Single View** — Watch one program
-- **Dual View** — Watch two programs concurrently
-- **Grid View** — Watch up to four programs concurrently
-- Individual panels expand to fullscreen when the player's fullscreen button is clicked
+- Click the **+** button (top right) to add another view — the screen
+  rearranges itself: two views side by side, three with one large view,
+  four in a 2×2 grid. The layout is automatic; there's nothing to choose.
+- Click **×** on a view to close it. The remaining views keep playing and
+  reflow to fill the space; closing the last view returns it to the guide.
+- Only one view plays audio at a time. The highlighted 🔊 button marks
+  which one; click the greyed 🔇 on any other view to move the audio there.
+- A view that isn't playing audio has its volume controls dimmed and
+  disabled — activate the view first, then adjust.
+- Individual views expand to fullscreen when the player's fullscreen
+  button is clicked.
+- Every live view consumes network bandwidth.
 
-Streams keep playing when you switch views: a panel you populated in Grid View is
-still live when you return to it — no reconnect, no "Connecting..." message.
-Panels in views you're not looking at continue playing silently in the background
-(muted). Keep in mind that every live panel consumes network bandwidth, so a
-populated Grid View running in the background still uses your connection.
+### 🔊 Sound Where You Expect It
+
+- Streams start with audio already on — no "click to unmute" step.
+- Programs start at 50% volume and pick up whatever volume you last set
+  while another program was playing.
+- The player's volume bar and mute button always reflect what you're
+  actually hearing.
 
 ### 🔄 Automatic Failover
 
@@ -107,14 +121,16 @@ Pre-built binaries for macOS, Windows, and Linux are available on the
 
 ## How It Works
 
-1. Launch the app. It loads the program guide first — a brief
-   "Loading the program guide..." message appears, then the guide opens
-   on its own.
-2. Browse the program guide for the program that interests you
-   (click "Click to select a program" in any empty panel to reopen it)
-3. Click the program to fill that panel
-4. Switch from Single to Dual or Grid View to view more than one program at a time — populated panels resume instantly, right where they left off
-5. Closing a program returns the panel to the program guide
+1. Launch the app. It loads the program guide first — a brief "Loading the
+   program guide..." message appears, then the guide opens on its own.
+   The guide also reopens by itself whenever your only view is empty; in
+   multi-view, click "Click to select a program" in an empty view to open
+   it there.
+2. Click the program you want to watch — it starts playing, with sound.
+3. Click **+** to add another view and pick a program for it. Audio moves
+   to the newest view automatically; the 🔊 button on any view moves it
+   back.
+4. Click **×** on a view to close it.
 
 - While a stream is playing, the player controls behave the same way as on the
   source site — they fade out after about a second of mouse inactivity and
@@ -122,7 +138,7 @@ Pre-built binaries for macOS, Windows, and Linux are available on the
 
 If the primary stream URL fails, the app automatically tries alternate
 sources before giving up. A brief "Connecting..."
-message appears in the panel during this process.
+message appears in the view during this process.
 
 ## Program Guide Accuracy
 

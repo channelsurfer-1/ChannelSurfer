@@ -127,7 +127,15 @@ function applyAudioState() {
     if (index >= paneCount) return;
     const wv = pane.querySelector('webview');
     if (wv) {
-      try { wv.setAudioMuted(index !== focusedPaneIndex); } catch (_) {}
+      const focused = (index === focusedPaneIndex);
+      try { wv.setAudioMuted(!focused); } catch (_) {}
+      // Tell main the audible state of every stream webview so the player's
+      // own control bar reflects reality (mute icon follows focus).
+      let wcId = null;
+      try { wcId = wv.getWebContentsId(); } catch (_) {}
+      if (typeof wcId === 'number') {
+        sendIpc('set-pane-audio-focus', { webContentsId: wcId, focused: focused });
+      }
     }
     const soundBtn = pane.querySelector('.pane-sound-btn');
     if (soundBtn) {
@@ -181,8 +189,8 @@ function closePane(index) {
 
   if (paneCount <= 1) {
     // Closing the only pane just clears it back to an empty view.
+    // paneScroll is preserved so the guide reopens where the user left it.
     panePrograms[0] = null;
-    paneScroll[0] = 0;
     focusPane(0);
     renderView();
     return;
@@ -422,6 +430,7 @@ function runStreamAttempt(attempt) {
       const id = thisWebview.getWebContentsId();
       attempt.webContentsId = id;
       sendIpc('register-stream-attempt', { webContentsId: id });
+      applyAudioState(); // publish this webview's focus state to main
       if (isDebug()) {
         logToMain('[CAND] candidate ' + (attempt.candidateIndex + 1) + ' dom-ready wc=' + id);
       }
