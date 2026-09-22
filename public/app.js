@@ -950,14 +950,33 @@ function updatePaneLabel(dlhdId, programName) {
 function renderView() {
   applyPaneVisibility();
 
+  // Reconciliation invariant: visible slot i shows panePrograms[i]; hidden
+  // slots are empty. A survivor webview left parked in a now-hidden div
+  // (when a pane above it was closed) would keep playing invisibly — tear
+  // it down. Webviews are never moved between divs: moving the element
+  // kills the guest (Spike 1), so a displaced survivor is re-streamed in
+  // place instead.
+  allPanes().forEach((pane, index) => {
+    if (index >= paneCount && pane.firstChild) {
+      cancelStreamAttempt(pane);
+      pane.innerHTML = '';
+    }
+  });
+
   for (let index = 0; index < paneCount; index++) {
     const pane = getPane(index);
     if (!pane) continue;
     const program = panePrograms[index];
     if (program) {
       const attempt = streamAttempts.get(pane);
-      const hasWebview = !!pane.querySelector('webview');
-      if (!attempt && !hasWebview) {
+      const wv = pane.querySelector('webview');
+      // A webview parked here by a pre-close survivor belongs to the
+      // program that USED to hold this slot; only a channel match proves
+      // this div is showing the program the slot now calls for.
+      // Otherwise tear down and re-stream (attemptStream replaces
+      // whatever is in the pane).
+      const hasMatchingWebview = !!wv && wv.dataset.channelId === String(program.dlhdId);
+      if (!attempt && !hasMatchingWebview) {
         attemptStream(pane, index, program.stationName, program.dlhdId, program.programName);
       } else {
         ensurePaneControls(pane);
