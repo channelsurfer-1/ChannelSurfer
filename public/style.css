@@ -364,6 +364,19 @@ body {
   background-color: var(--bg-hover);
 }
 
+/* The pane's current program: quiet blue tint + accent bar on the left
+   edge (inset shadow, so nothing shifts). Deliberately distinct from the
+   gray hover. The hover variant keeps the current row recognizable while
+   the mouse is over it. */
+.pane-schedule-row.is-current {
+  background-color: var(--bg-selected-priority-1);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.pane-schedule-row.is-current:hover {
+  background-color: var(--bg-selected-priority-2);
+}
+
 .pane-schedule-station {
   width: 40%;
   min-width: 20%;
@@ -430,7 +443,7 @@ body {
 }
 
 /* =============================================
-   PANE LABEL & HOST CONTROLS (sound / close)
+   PANE LABEL & HOST CONTROLS (guide / sound / close)
    ============================================= */
 .pane-label {
   position: absolute;
@@ -460,13 +473,33 @@ body {
   flex-shrink: 0;
 }
 
+/* Floats above the guide overlay (z-50) so the controls stay reachable
+   when the guide is open over a pane. */
 .pane-controls {
   position: absolute;
   top: 8px;
   right: 8px;
   display: flex;
   gap: 6px;
-  z-index: 20;
+  z-index: 60;
+}
+
+.pane-guide-btn {
+  width: 28px;
+  height: 28px;
+  background-color: var(--overlay-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.pane-guide-btn:hover {
+  border-color: var(--accent);
 }
 
 .pane-sound-btn {

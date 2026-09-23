@@ -37,15 +37,38 @@ if (!document.getElementById('connecting-dots-style')) {
   const style = document.createElement('style');
   style.id = 'connecting-dots-style';
   style.textContent = `
-    @keyframes dots-blink {
-      0%, 100% { opacity: 1; }
-      50%      { opacity: 0; }
+    @keyframes dot-seq {
+      0%   { opacity: 0; }
+      20%  { opacity: 1; }
+      60%  { opacity: 1; }
+      80%  { opacity: 0; }
+      100% { opacity: 0; }
     }
-    .connecting-dots {
-      animation: dots-blink 1s ease-in-out infinite;
+    .connecting-dots .dot {
+      display: inline-block;
+      opacity: 0;
+      animation: dot-seq 1.2s ease-in-out infinite;
     }
+    .connecting-dots .dot2 { animation-delay: 0.2s; }
+    .connecting-dots .dot3 { animation-delay: 0.4s; }
   `;
   document.head.appendChild(style);
+}
+
+// Sequential "thinking" dots: each dot lights in turn, overlapping its
+// neighbor (lit pair slides across). Each dot is its own element (CSS can't
+// animate characters of a text node); base opacity:0 keeps delayed dots
+// invisible until their turn.
+function makeConnectingDots() {
+  const wrap = document.createElement('span');
+  wrap.className = 'connecting-dots';
+  for (let i = 1; i <= 3; i++) {
+    const d = document.createElement('span');
+    d.className = 'dot dot' + i;
+    d.textContent = '.';
+    wrap.appendChild(d);
+  }
+  return wrap;
 }
 
 function sendIpc(channel, payload) {
@@ -151,6 +174,18 @@ function applyAudioState() {
       soundBtn.textContent = active ? '\u{1F50A}' : '\u{1F507}';
       soundBtn.classList.toggle('active', active);
     }
+    // The guide button is meaningless while its own guide is open (Escape
+    // or a row pick takes it from there). The × is hidden in the one true
+    // no-op state: the single empty pane (the initial screen — closing it
+    // just reopens the guide). Everywhere else it does real work: stops a
+    // stream in single view, removes a slot in multi-view.
+    const guideOpen = !!pane.querySelector('.pane-schedule-overlay');
+    const guideBtn = pane.querySelector('.pane-guide-btn');
+    if (guideBtn) guideBtn.style.display = guideOpen ? 'none' : '';
+    const closeBtn = pane.querySelector('.pane-close-btn');
+    if (closeBtn) {
+      closeBtn.style.display = (paneCount === 1 && !panePrograms[index]) ? 'none' : '';
+    }
   });
 }
 
@@ -222,6 +257,30 @@ function ensurePaneControls(pane) {
   const controls = document.createElement('div');
   controls.className = 'pane-controls';
 
+  // Calendar button: open the guide over this pane WITHOUT changing the
+  // layout. The stream (if any) keeps playing underneath; a row pick
+  // replaces it, Escape closes the guide and reveals it. The button hides
+  // itself while its guide is open (see applyAudioState).
+  const guideBtn = document.createElement('button');
+  guideBtn.className = 'pane-guide-btn';
+  guideBtn.title = 'Show the guide';
+  guideBtn.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="11.5" rx="2"/><line x1="1.75" y1="6.5" x2="14.25" y2="6.5"/><line x1="5" y1="1.25" x2="5" y2="4.25"/><line x1="11" y1="1.25" x2="11" y2="4.25"/></svg>';
+  guideBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const idx = paneIndexOf(pane);
+    if (idx === -1 || idx >= paneCount) return;
+    const openOverlay = pane.querySelector('.pane-schedule-overlay');
+    if (openOverlay) {
+      openOverlay.remove();
+      paneOverlayOpen[idx] = false;
+      guideBtn.title = 'Show the guide';
+    } else {
+      showScheduleOverlay(pane, idx, panePrograms[idx]);
+      guideBtn.title = 'Hide the guide';
+    }
+    applyAudioState(); // re-evaluate guide/× visibility
+  });
+
   const soundBtn = document.createElement('button');
   soundBtn.className = 'pane-sound-btn';
   soundBtn.title = 'Play audio from this view';
@@ -240,6 +299,7 @@ function ensurePaneControls(pane) {
     closePane(paneIndexOf(pane));
   });
 
+  controls.appendChild(guideBtn);
   controls.appendChild(soundBtn);
   controls.appendChild(closeBtn);
   pane.appendChild(controls);
@@ -419,10 +479,7 @@ function runStreamAttempt(attempt) {
   indicator.style.zIndex = '100';
   const labelSpan = document.createElement('span');
   labelSpan.textContent = 'Connecting';
-  const dotsSpan = document.createElement('span');
-  dotsSpan.className = 'connecting-dots';
-  dotsSpan.textContent = '...';
-  labelSpan.appendChild(dotsSpan);
+  labelSpan.appendChild(makeConnectingDots());
   indicator.appendChild(labelSpan);
   attempt.indicator = indicator;
   attempt.pane.appendChild(indicator);
@@ -877,10 +934,7 @@ function updateGuideStatusScreen() {
     label.textContent = 'Unable to load program guide...';
   } else {
     label.textContent = 'Loading the program guide';
-    const dots = document.createElement('span');
-    dots.className = 'connecting-dots';
-    dots.textContent = '…';
-    label.appendChild(dots);
+    label.appendChild(makeConnectingDots());
 
     const remaining = GUIDE_ERROR_THRESHOLD_MS - unavailableMs;
     if (remaining > 0) {
@@ -1089,6 +1143,11 @@ function showScheduleOverlay(pane, paneIndex, existingProgram) {
   if (isDebug()) {
     logToMain('[SCHED] restore scroll pane ' + paneIndex + ': ' + listContainer.scrollTop);
   }
+
+  // The overlay now exists; refresh button visibility (the guide button
+  // hides itself while its guide is open; the × hides on empty-pane
+  // guides and in single view).
+  applyAudioState();
 }
 
 function populateScheduleList(listContainer, pane, paneIndex) {
@@ -1103,10 +1162,7 @@ function populateScheduleList(listContainer, pane, paneIndex) {
     } else {
       const labelSpan = document.createElement('span');
       labelSpan.textContent = 'Loading the program guide';
-      const dotsSpan = document.createElement('span');
-      dotsSpan.className = 'connecting-dots';
-      dotsSpan.textContent = '…';
-      labelSpan.appendChild(dotsSpan);
+      labelSpan.appendChild(makeConnectingDots());
       msgRow.appendChild(labelSpan);
 
       const remaining = GUIDE_ERROR_THRESHOLD_MS - unavailableMs;
@@ -1130,6 +1186,12 @@ function populateScheduleList(listContainer, pane, paneIndex) {
   stationsEntries.forEach(([stationName, stationObj]) => {
     const row = document.createElement('div');
     row.className = 'pane-schedule-row';
+    // Mark the row that is THIS pane's current program — the
+    // "back to what I was watching" row. Stations playing in other panes
+    // are not marked; the highlight is pane-scoped.
+    if (panePrograms[paneIndex] && panePrograms[paneIndex].dlhdId === stationObj.dlhdId) {
+      row.classList.add('is-current');
+    }
 
     const stationSpan = document.createElement('div');
     stationSpan.className = 'pane-schedule-station';
@@ -1221,6 +1283,25 @@ function populateScheduleList(listContainer, pane, paneIndex) {
         paneScroll[paneIndex] = currentList.scrollTop;
       }
 
+      // Re-picking the program already playing in this pane = "back to
+      // what I was watching": just dismiss the guide; the stream never
+      // stops. Any other row replaces the stream as usual. Health check
+      // required: same channel, no failover in flight, live webview
+      // actually showing it — otherwise a click re-streams.
+      const currentProgram = panePrograms[paneIndex];
+      const wv = pane.querySelector('webview');
+      const alreadyPlaying = currentProgram &&
+        currentProgram.dlhdId === stationObj.dlhdId &&
+        !streamAttempts.has(pane) &&
+        wv && !wv.dataset.dead && wv.dataset.channelId === String(stationObj.dlhdId);
+      if (alreadyPlaying) {
+        const overlay = pane.querySelector('.pane-schedule-overlay');
+        if (overlay) overlay.remove();
+        paneOverlayOpen[paneIndex] = false;
+        applyAudioState();
+        return;
+      }
+
       panePrograms[paneIndex] = {
         stationName: displayName,
         dlhdId: stationObj.dlhdId,
@@ -1247,6 +1328,21 @@ document.addEventListener('DOMContentLoaded', () => {
   if (addViewBtn) {
     addViewBtn.addEventListener('click', () => addView());
   }
+
+  // Escape closes the open guide (one overlay app-wide), revealing the
+  // still-playing stream underneath. The guide button is hidden while its
+  // guide is open, so this is the way back without picking a channel.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const openOverlay = document.querySelector('.view-pane .pane-schedule-overlay');
+    if (!openOverlay) return;
+    const pane = openOverlay.parentElement;
+    const idx = paneIndexOf(pane);
+    if (idx === -1) return;
+    openOverlay.remove();
+    paneOverlayOpen[idx] = false;
+    applyAudioState();
+  });
 
   // Swallow the release-click that follows a real column drag, wherever it
   // lands. Capture phase runs before every row handler. The flag is set in
