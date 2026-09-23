@@ -13,9 +13,9 @@ let tooltipTimer = null;
 let stationColumnWidth = 40;
 let isResizingColumn = false;
 // Set in onMouseUp when a column drag actually moved the mouse. The
-// release-click that follows (wherever it lands) is swallowed exactly once
-// by the capture-phase click listener below. isResizingColumn cannot be used
-// for this: it is cleared in onMouseUp, BEFORE the click event dispatches.
+// release-click that follows (wherever it lands) is swallowed once
+// by the capture-phase click listener below. isResizingColumn cannot be
+// used for this: it is cleared in onMouseUp, BEFORE the click event dispatches.
 let suppressNextRowClick = false;
 
 // Per-pane state (arrays grow/shrink with paneCount; index 0-based).
@@ -1193,6 +1193,19 @@ function populateScheduleList(listContainer, pane, paneIndex) {
     programSpan.addEventListener('mousemove', moveTooltip);
     programSpan.addEventListener('mouseleave', hideTooltip);
 
+    // Keep the header divider pinned to the same pixel position as the row
+    // dividers. % alone can't do it: the header spans the full overlay width
+    // while the list is narrower by the scrollbar, so equal percentages
+    // land on different pixels. Same px for both = always aligned, and the
+    // header follows every drag and every repopulate.
+    const listWidthNow = listContainer.clientWidth;
+    const dividerPx = (stationColumnWidth / 100) * listWidthNow;
+    const headerStation = pane.querySelector('.pane-schedule-header-station');
+    if (headerStation) {
+      headerStation.style.width = dividerPx + 'px';
+      headerStation.style.minWidth = dividerPx + 'px';
+    }
+
     row.addEventListener('click', (e) => {
       if (isResizingColumn) return;
 
@@ -1262,19 +1275,29 @@ document.addEventListener('DOMContentLoaded', () => {
           moved = true;
         }
 
-        const overlay = document.querySelector('.view-pane .pane-schedule-overlay');
-        if (!overlay) return;
+        const list = document.querySelector('.view-pane .pane-schedule-list');
+        if (!list) return;
 
-        const overlayWidth = overlay.offsetWidth;
-        const deltaX = moveEvent.clientX - startX;
-        const deltaPercent = (deltaX / overlayWidth) * 100;
+        // Rows live in the list, whose width excludes the vertical scrollbar
+        // (~6px). That coordinate space is the source of truth for the
+        // divider: percentages of the overlay width drift ~2px against the
+        // rows once the scrollbar appears.
+        const listWidth = list.clientWidth;
+        const deltaPercent = ((moveEvent.clientX - startX) / listWidth) * 100;
         const newWidth = startWidthPercent + deltaPercent;
 
         if (newWidth >= 20 && newWidth <= 60) {
           stationColumnWidth = newWidth;
+          const px = (newWidth / 100) * listWidth;
+          // Header cell moves in lockstep with the row cells — same px,
+          // since both containers share the same left edge.
           document.querySelectorAll('.pane-schedule-station').forEach(station => {
-            station.style.width = newWidth + '%';
-            station.style.minWidth = newWidth + '%';
+            station.style.width = px + 'px';
+            station.style.minWidth = px + 'px';
+          });
+          document.querySelectorAll('.pane-schedule-header-station').forEach(header => {
+            header.style.width = px + 'px';
+            header.style.minWidth = px + 'px';
           });
         }
       };

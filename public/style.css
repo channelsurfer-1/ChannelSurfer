@@ -304,7 +304,7 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-size: 0.85rem;
-  border-right: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-strong);
   height: 100%;
   display: flex;
   align-items: center;
@@ -378,10 +378,14 @@ body {
   height: 100%;
   display: flex;
   align-items: center;
-  border-right: none;
+  border-right: 1px solid var(--border-strong);
   position: relative;
 }
 
+/* Transparent 6px hit strip over the divider line; it owns the mouse
+   (z-index above the row background) but paints nothing, so the line
+   drawn by .pane-schedule-station's right border shows through
+   identically in every row and over row hover. */
 .pane-schedule-station-resizer {
   position: relative;
   width: 6px;
@@ -391,12 +395,6 @@ body {
   background: transparent;
   z-index: 5;
   flex-shrink: 0;
-  border-left: 1px solid var(--border-color);
-  transition: border-color 0.15s ease;
-}
-
-.pane-schedule-station-resizer:hover {
-  border-left: 1px solid var(--accent);
 }
 
 .pane-schedule-program {
