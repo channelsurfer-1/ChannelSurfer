@@ -25,7 +25,7 @@ A desktop application for browsing and watching live TV streams with a rich, mod
 
 ![](./documentation/Schedule-Only.png)
 
-### Single View Modre
+### Single View Mode
 
 ![](./documentation/Single-View.png)
 
@@ -33,11 +33,11 @@ A desktop application for browsing and watching live TV streams with a rich, mod
 
 ![](./documentation/Dual-View.png)
 
-### Trio View Mode
+### Three View Mode
 
 ![](./documentation/Trio-View.png)
 
-### Grid View Mode
+### Four View Mode
 
 ![](./documentation/Grid-View.png)
 
@@ -48,6 +48,9 @@ A desktop application for browsing and watching live TV streams with a rich, mod
 Browse current programming across all available stations.
 
 - Click an empty panel to open the program guide
+- Click the **calendar button** on any view to browse the guide over what's playing — the stream keeps running underneath and the layout doesn't change
+- Press **Escape** (or click the highlighted current program) to return to the stream — it never stopped playing
+- The current program's row is highlighted in the guide
 - The program guide shows program titles and descriptions (on hover)
 - Drag the divider between the Channel and Program columns to resize them
 
@@ -130,7 +133,10 @@ Pre-built binaries for macOS, Windows, and Linux are available on the
 3. Click **+** to add another view and pick a program for it. Audio moves
    to the newest view automatically; the 🔊 button on any view moves it
    back.
-4. Click **×** on a view to close it.
+4. Click the **calendar button** on a playing view to browse the guide
+   without leaving it. The stream keeps playing underneath; press
+   **Escape** to return to it, or pick any program to switch.
+5. Click **×** on a view to close it.
 
 - While a stream is playing, the player controls behave the same way as on the
   source site — they fade out after about a second of mouse inactivity and
