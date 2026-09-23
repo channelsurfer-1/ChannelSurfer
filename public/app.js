@@ -12,6 +12,11 @@ let pendingFocusPane = -1;
 let tooltipTimer = null;
 let stationColumnWidth = 40;
 let isResizingColumn = false;
+// Set in onMouseUp when a column drag actually moved the mouse. The
+// release-click that follows (wherever it lands) is swallowed exactly once
+// by the capture-phase click listener below. isResizingColumn cannot be used
+// for this: it is cleared in onMouseUp, BEFORE the click event dispatches.
+let suppressNextRowClick = false;
 
 // Per-pane state (arrays grow/shrink with paneCount; index 0-based).
 let panePrograms = [null];
@@ -1230,8 +1235,12 @@ document.addEventListener('DOMContentLoaded', () => {
     addViewBtn.addEventListener('click', () => addView());
   }
 
+  // Swallow the release-click that follows a real column drag, wherever it
+  // lands. Capture phase runs before every row handler. The flag is set in
+  // onMouseUp (which runs BEFORE the click dispatches) and cleared here.
   document.addEventListener('click', (e) => {
-    if (isResizingColumn) {
+    if (suppressNextRowClick) {
+      suppressNextRowClick = false;
       e.stopPropagation();
       e.preventDefault();
     }
@@ -1244,9 +1253,15 @@ document.addEventListener('DOMContentLoaded', () => {
       isResizingColumn = true;
 
       const startX = e.clientX;
+      const startY = e.clientY;
       const startWidthPercent = stationColumnWidth;
+      let moved = false;
 
       const onMouseMove = (moveEvent) => {
+        if (Math.abs(moveEvent.clientX - startX) > 3 || Math.abs(moveEvent.clientY - startY) > 3) {
+          moved = true;
+        }
+
         const overlay = document.querySelector('.view-pane .pane-schedule-overlay');
         if (!overlay) return;
 
@@ -1266,6 +1281,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const onMouseUp = () => {
         isResizingColumn = false;
+        if (moved) suppressNextRowClick = true;
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
         document.body.style.cursor = 'default';
