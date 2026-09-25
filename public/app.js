@@ -153,6 +153,7 @@ function applyFocusStyles() {
 function applyAudioState() {
   allPanes().forEach((pane, index) => {
     if (index >= paneCount) return;
+    const guideOpen = !!pane.querySelector('.pane-schedule-overlay');
     const wv = pane.querySelector('webview');
     if (wv) {
       const focused = (index === focusedPaneIndex);
@@ -167,10 +168,11 @@ function applyAudioState() {
     }
     const soundBtn = pane.querySelector('.pane-sound-btn');
     if (soundBtn) {
-      // Only meaningful when there's a choice between panes; the icon shows
-      // which pane is audible (accented) vs silent (greyed, click to hear).
+      // Only meaningful when there's a choice between panes AND the guide
+      // isn't covering this one — the icon shows which pane is audible
+      // (accented) vs silent (greyed, click to hear).
       const active = (index === focusedPaneIndex);
-      soundBtn.style.display = (paneCount > 1) ? '' : 'none';
+      soundBtn.style.display = (paneCount > 1 && !guideOpen) ? '' : 'none';
       soundBtn.textContent = active ? '\u{1F50A}' : '\u{1F507}';
       soundBtn.classList.toggle('active', active);
     }
@@ -179,7 +181,6 @@ function applyAudioState() {
     // no-op state: the single empty pane (the initial screen — closing it
     // just reopens the guide). Everywhere else it does real work: stops a
     // stream in single view, removes a slot in multi-view.
-    const guideOpen = !!pane.querySelector('.pane-schedule-overlay');
     const guideBtn = pane.querySelector('.pane-guide-btn');
     if (guideBtn) guideBtn.style.display = guideOpen ? 'none' : '';
     const closeBtn = pane.querySelector('.pane-close-btn');

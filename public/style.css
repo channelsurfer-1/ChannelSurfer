@@ -473,8 +473,9 @@ body {
   flex-shrink: 0;
 }
 
-/* Floats above the guide overlay (z-50) so the controls stay reachable
-   when the guide is open over a pane. */
+/* Floats above the guide overlay (z-50). Only the × stays visible over an
+   open guide — the sound and calendar buttons hide while their own guide
+   is open (see applyAudioState). */
 .pane-controls {
   position: absolute;
   top: 8px;
