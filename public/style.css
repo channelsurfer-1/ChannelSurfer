@@ -183,7 +183,16 @@ body {
   grid-template-rows: 1fr 1fr;
 }
 
-#panes-container.panes-3 .view-pane[data-pane="1"] {
+/* Visual placement follows the data-pane slot attribute, not DOM order.
+   Closing a pane remaps survivors' attributes (never moves their divs —
+   moving a webview kills the guest), and grid auto-placement honors
+   `order`, so slot N always lands in the Nth visual position. */
+.view-pane[data-pane="0"] { order: 0; }
+.view-pane[data-pane="1"] { order: 1; }
+.view-pane[data-pane="2"] { order: 2; }
+.view-pane[data-pane="3"] { order: 3; }
+
+#panes-container.panes-3 .view-pane[data-pane="0"] {
   grid-column: 1 / 2;
   grid-row: 1 / 3;
 }

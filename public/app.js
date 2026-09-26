@@ -119,9 +119,18 @@ function broadcastWebviewBounds() {
 
 // ---------- Pane helpers ----------
 
+// Slot↔div mapping model (09-26): every .view-pane div carries a data-pane
+// attribute = the slot it currently fills. Slots 0..paneCount-1 are visible;
+// higher-numbered divs are parked (emptied). Closing a slot bumps survivors'
+// attributes down instead of moving their contents — moving a webview's
+// element kills the guest (Spike 1) — so survivors keep playing with NO
+// re-stream. Visual placement follows data-pane via CSS order/grid, never
+// DOM order. allPanes() returns divs sorted by slot, so slot-indexed logic
+// throughout this file is unchanged.
 function allPanes() {
   const panesContainer = document.getElementById('panes-container');
-  return Array.from(panesContainer.querySelectorAll('.view-pane'));
+  return Array.from(panesContainer.querySelectorAll('.view-pane'))
+    .sort((a, b) => (Number(a.dataset.pane) || 0) - (Number(b.dataset.pane) || 0));
 }
 
 function getPane(index) {
@@ -129,7 +138,8 @@ function getPane(index) {
 }
 
 function paneIndexOf(pane) {
-  return allPanes().indexOf(pane);
+  const slot = Number(pane.dataset.pane);
+  return Number.isInteger(slot) ? slot : -1;
 }
 
 function setContainerLayout() {
@@ -139,19 +149,22 @@ function setContainerLayout() {
 }
 
 function applyPaneVisibility() {
-  allPanes().forEach((pane, index) => {
-    pane.style.display = index < paneCount ? '' : 'none';
+  allPanes().forEach((pane) => {
+    const slot = Number(pane.dataset.pane);
+    pane.style.display = slot < paneCount ? '' : 'none';
   });
 }
 
 function applyFocusStyles() {
-  allPanes().forEach((pane, index) => {
-    pane.classList.toggle('focused', index < paneCount && index === focusedPaneIndex);
+  allPanes().forEach((pane) => {
+    const slot = Number(pane.dataset.pane);
+    pane.classList.toggle('focused', slot < paneCount && slot === focusedPaneIndex);
   });
 }
 
 function applyAudioState() {
-  allPanes().forEach((pane, index) => {
+  allPanes().forEach((pane) => {
+    const index = Number(pane.dataset.pane);
     if (index >= paneCount) return;
     const guideOpen = !!pane.querySelector('.pane-schedule-overlay');
     const wv = pane.querySelector('webview');
@@ -208,10 +221,15 @@ function focusPane(index) {
 
 function addView() {
   if (paneCount >= 4) return;
+  // The div parked at data-pane === paneCount becomes the new slot
+  // automatically when the count increments — no assignment needed.
   paneCount++;
   panePrograms.push(null);
   paneOverlayOpen.push(false);
   paneScroll.push(0);
+  const newPane = getPane(paneCount - 1);
+  if (newPane) newPane.innerHTML = ''; // parked divs are emptied by the
+                                       // renderView invariant; belt-and-braces.
   setContainerLayout();
   renderView();
   const newIndex = paneCount - 1;
@@ -243,6 +261,14 @@ function closePane(index) {
   paneOverlayOpen.splice(index, 1);
   paneScroll.splice(index, 1);
   paneCount--;
+
+  // Slot remap: survivors below the closed slot move down one (data-pane
+  // bump); the closed div parks at the freed top number. No re-streams.
+  allPanes().forEach((p) => {
+    const slot = Number(p.dataset.pane);
+    if (slot > index) p.dataset.pane = String(slot - 1);
+  });
+  pane.dataset.pane = String(paneCount);
 
   if (focusedPaneIndex > index) focusedPaneIndex--;
   else if (focusedPaneIndex === index) focusedPaneIndex = Math.min(index, paneCount - 1);
@@ -560,6 +586,9 @@ function advanceStreamAttempt(attempt) {
 
 function succeedStreamAttempt(attempt) {
   streamAttempts.delete(attempt.pane);
+  // Slots may have remapped (pane closed) while this attempt was in
+  // flight — re-derive the slot from the element, not the cached index.
+  attempt.paneIndex = paneIndexOf(attempt.pane);
 
   const elapsed = attempt.candidateStartTime
     ? ((Date.now() - attempt.candidateStartTime) / 1000).toFixed(1)
@@ -600,6 +629,8 @@ function succeedStreamAttempt(attempt) {
 
 function failStreamAttempt(attempt) {
   streamAttempts.delete(attempt.pane);
+  // Same re-derivation as succeedStreamAttempt — slots may have remapped.
+  attempt.paneIndex = paneIndexOf(attempt.pane);
   if (pendingFocusPane === attempt.paneIndex) pendingFocusPane = -1;
 
   const elapsed = attempt.overallStartTime
@@ -1006,7 +1037,8 @@ function scheduleProgramTimer(dlhdId) {
 }
 
 function updatePaneLabel(dlhdId, programName) {
-  allPanes().forEach((pane, index) => {
+  allPanes().forEach((pane) => {
+    const index = Number(pane.dataset.pane);
     const program = index < paneCount ? panePrograms[index] : null;
     if (program && program.dlhdId === dlhdId) {
       const existingLabel = pane.querySelector('.pane-label');
@@ -1019,14 +1051,14 @@ function updatePaneLabel(dlhdId, programName) {
 function renderView() {
   applyPaneVisibility();
 
-  // Reconciliation invariant: visible slot i shows panePrograms[i]; hidden
-  // slots are empty. A survivor webview left parked in a now-hidden div
-  // (when a pane above it was closed) would keep playing invisibly — tear
-  // it down. Webviews are never moved between divs: moving the element
-  // kills the guest (Spike 1), so a displaced survivor is re-streamed in
-  // place instead.
-  allPanes().forEach((pane, index) => {
-    if (index >= paneCount && pane.firstChild) {
+  // Reconciliation invariant: visible slot i (div with data-pane === i)
+  // shows panePrograms[i]; parked divs (data-pane >= paneCount) are empty.
+  // A survivor left playing in a parked div would make invisible ghost
+  // audio — tear it down. Webviews are never moved between divs: slots
+  // remap by data-pane, so a displaced survivor needs no re-stream.
+  allPanes().forEach((pane) => {
+    const slot = Number(pane.dataset.pane);
+    if (slot >= paneCount && pane.firstChild) {
       cancelStreamAttempt(pane);
       pane.innerHTML = '';
     }
@@ -1039,11 +1071,9 @@ function renderView() {
     if (program) {
       const attempt = streamAttempts.get(pane);
       const wv = pane.querySelector('webview');
-      // A webview parked here by a pre-close survivor belongs to the
-      // program that USED to hold this slot; only a channel match proves
-      // this div is showing the program the slot now calls for.
-      // Otherwise tear down and re-stream (attemptStream replaces
-      // whatever is in the pane).
+      // Only a channel match proves this div is showing the program the
+      // slot calls for. Otherwise tear down and re-stream (attemptStream
+      // replaces whatever is in the pane).
       const hasMatchingWebview = !!wv && wv.dataset.channelId === String(program.dlhdId);
       if (!attempt && !hasMatchingWebview) {
         attemptStream(pane, index, program.stationName, program.dlhdId, program.programName);
@@ -1077,7 +1107,8 @@ function renderView() {
 
 function showScheduleOverlay(pane, paneIndex, existingProgram) {
   // One overlay at a time, app-wide: opening one closes the others.
-  allPanes().forEach((otherPane, index) => {
+  allPanes().forEach((otherPane) => {
+    const index = Number(otherPane.dataset.pane);
     if (otherPane === pane || index >= paneCount) return;
 
     const otherOverlay = otherPane.querySelector('.pane-schedule-overlay');
@@ -1581,6 +1612,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.body.appendChild(statusScreen);
   guideStatusShownAt = Date.now();
   updateGuideStatusScreen();
+
+  // Defensive: if any pane div lacks data-pane (older HTML), assign by DOM
+  // order so the slot mapping is always defined.
+  document.querySelectorAll('#panes-container .view-pane').forEach((pane, i) => {
+    if (pane.dataset.pane === undefined) pane.dataset.pane = String(i);
+  });
 
   setContainerLayout();
   renderView();
