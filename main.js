@@ -369,6 +369,9 @@ function hideUnmuteCurtain(wcId) {
           '#unmute { display: none !important; }' +
           'div[style*="z-index: 2147483647"] { pointer-events: none !important; }';
         (document.head || document.documentElement).appendChild(s);
+        // This pane was muted by the APP at connect (unfocused connect),
+        // not by the user — mark it so focus-in may unmute it.
+        window.__csSyncMuted = true;
         var rem = 0.5;
         const v = document.querySelector('video');
         if (v) {
@@ -833,12 +836,18 @@ function startCursorPoll() {
 
 // ---------- Pane audio focus sync ----------
 // The renderer tells us which stream webviews are audible (corner-button
-// focus model). Two things follow: (1) the inactive pane's volume drawer
-// is dimmed and pointer-events-disabled, so its controls can never be
-// toggled into a meaningless state — programmatic clicks (our own sync)
-// bypass pointer-events; (2) the player's mute toggle is driven to match,
-// so the control bar and the corner buttons always agree. A stream that
-// connects into an unfocused pane skips the startup unmute (stays muted).
+// focus model). (1) The inactive pane's volume drawer is dimmed and
+// pointer-events-disabled, so its controls can never be toggled into a
+// meaningless state — programmatic clicks (our own sync) bypass
+// pointer-events. (2) Mute direction is enforced ONE WAY only: an
+// unfocused pane is muted by the script (and marked __csSyncMuted), and
+// a focused pane is unmuted ONLY if the script muted it (flag present).
+// A mute without the flag is a USER mute — it sticks across focus moves
+// (09-25: the old force-match logic unmuted user-muted panes on every
+// applyAudioState, e.g. when + was clicked). A focused-but-user-muted
+// pane is a legitimate state: silent, but still the audio owner.
+// A stream that connects into an unfocused pane skips the startup
+// unmute (stays muted).
 const audioFocusByWc = new Map();
 
 const PANE_FOCUS_SYNC_SCRIPT = (focused) => `
@@ -855,12 +864,20 @@ const PANE_FOCUS_SYNC_SCRIPT = (focused) => `
     var icon = document.querySelector('.drawer-icon[data-volume]') || document.querySelector('.drawer-icon');
     if (!icon) return 'no-icon';
     var isMuted = icon.classList.contains('muted');
-    if (focused && isMuted) {
-      try { icon.click(); } catch (e) {}
-      return 'unmuted';
+    if (focused) {
+      // Unmute ONLY if this script muted the pane. No flag = user mute;
+      // it sticks — the corner button chose this pane as the audio owner,
+      // but the user silenced it, and that decision is theirs.
+      if (isMuted && window.__csSyncMuted === true) {
+        window.__csSyncMuted = false;
+        try { icon.click(); } catch (e) {}
+        return 'unmuted';
+      }
+      return 'no-op';
     }
-    if (!focused && !isMuted) {
+    if (!isMuted) {
       try { icon.click(); } catch (e) {}
+      window.__csSyncMuted = true;
       return 'muted';
     }
     return 'no-op';

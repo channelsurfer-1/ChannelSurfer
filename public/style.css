@@ -516,12 +516,14 @@ body {
   align-items: center;
   justify-content: center;
   padding: 0;
-  /* Greyed until it becomes the audible pane (or is hovered). */
-  opacity: 0.45;
+  /* Identical to the guide/× buttons by default; the .active state below
+     supplies the accent. Selection is carried by border + icon color,
+     never by dimming — dimming was also why the missing color rule went
+     unnoticed: emoji glyphs ignored CSS color entirely. */
+  color: var(--text-primary);
 }
 
 .pane-sound-btn:hover {
-  opacity: 1;
   border-color: var(--accent);
 }
 
@@ -529,6 +531,7 @@ body {
   opacity: 1;
   border-color: var(--accent);
   background-color: var(--overlay-accent-hover);
+  color: var(--accent);
 }
 
 .pane-close-btn {

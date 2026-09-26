@@ -63,8 +63,14 @@ Watch up to four channels at once.
   four in a 2×2 grid. The layout is automatic; there's nothing to choose.
 - Click **×** on a view to close it. The remaining views keep playing and
   reflow to fill the space; closing the last view returns it to the guide.
-- Only one view plays audio at a time. The highlighted 🔊 button marks
-  which one; click the greyed 🔇 on any other view to move the audio there.
+- Only one view plays audio at a time. The speaker button in a view's
+  top-right corner selects which one: the blue speaker marks the view you
+  hear, and clicking the grey speaker in any other view moves the audio
+  there. Think of the speakers as a radio group — one choice, not a set
+  of on/off switches.
+- The speaker in the player's own control bar (bottom of the stream) is a
+  different control: it mutes or adjusts the volume of that one stream.
+  It never chooses which view you hear — that's the corner speaker's job.
 - A view that isn't playing audio has its volume controls dimmed and
   disabled — activate the view first, then adjust.
 - Individual views expand to fullscreen when the player's fullscreen
@@ -131,8 +137,8 @@ Pre-built binaries for macOS, Windows, and Linux are available on the
    it there.
 2. Click the program you want to watch — it starts playing, with sound.
 3. Click **+** to add another view and pick a program for it. Audio moves
-   to the newest view automatically; the 🔊 button on any view moves it
-   back.
+   to the newest view automatically; the speaker button on any view moves
+   it back.
 4. Click the **calendar button** on a playing view to browse the guide
    without leaving it. The stream keeps playing underneath; press
    **Escape** to return to it, or pick any program to switch.

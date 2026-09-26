@@ -169,11 +169,13 @@ function applyAudioState() {
     const soundBtn = pane.querySelector('.pane-sound-btn');
     if (soundBtn) {
       // Only meaningful when there's a choice between panes AND the guide
-      // isn't covering this one — the icon shows which pane is audible
-      // (accented) vs silent (greyed, click to hear).
+      // isn't covering this one. Radio-group semantics: the SAME speaker
+      // glyph sits on every pane and color alone carries the selection
+      // (accent = the audio source; grey = click to move audio here).
+      // This chooses WHICH pane you hear — it is not a per-pane mute;
+      // muting lives in the player's own control bar.
       const active = (index === focusedPaneIndex);
       soundBtn.style.display = (paneCount > 1 && !guideOpen) ? '' : 'none';
-      soundBtn.textContent = active ? '🔊' : '🔇';
       soundBtn.classList.toggle('active', active);
     }
     // The guide button is meaningless while its own guide is open (Escape
@@ -282,10 +284,13 @@ function ensurePaneControls(pane) {
     applyAudioState(); // re-evaluate guide/× visibility
   });
 
+  // Speaker button: one plain glyph on every pane (no waves, no slash —
+  // no per-pane on/off state is implied). applyAudioState colors it:
+  // accent = the pane you hear, grey = click to move the audio here.
   const soundBtn = document.createElement('button');
   soundBtn.className = 'pane-sound-btn';
   soundBtn.title = 'Play audio from this view';
-  soundBtn.textContent = '🔇';
+  soundBtn.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 6h2.5L9 3v10L5.5 10H3z" stroke-linejoin="round"/></svg>';
   soundBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     focusPane(paneIndexOf(pane));
