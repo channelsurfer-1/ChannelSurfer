@@ -373,6 +373,13 @@ function createWebview(title, url) {
   webview.dataset.title = title;
   webview.dataset.channelId = extractChannelId(url) || '';
 
+  // Fullscreen audio policy: entering fullscreen makes this pane the audio
+  // focus (you're watching it); leaving restores the previous focus — but
+  // only if focus is still on this pane (the fixed webview covers all
+  // controls while fullscreen, so focus can't move; the guard is
+  // belt-and-braces).
+  let prevFocusOnFullscreen = -1;
+
   webview.addEventListener('enter-html-full-screen', () => {
     webview.style.position = 'fixed';
     webview.style.top = '0';
@@ -380,6 +387,12 @@ function createWebview(title, url) {
     webview.style.width = '100vw';
     webview.style.height = '100vh';
     webview.style.zIndex = '9999';
+    const pane = webview.parentElement;
+    const idx = pane ? paneIndexOf(pane) : -1;
+    if (idx !== -1 && idx < paneCount) {
+      prevFocusOnFullscreen = focusedPaneIndex;
+      focusPane(idx);
+    }
   });
 
   webview.addEventListener('leave-html-full-screen', () => {
@@ -389,6 +402,12 @@ function createWebview(title, url) {
     webview.style.width = '';
     webview.style.height = '';
     webview.style.zIndex = '';
+    const pane = webview.parentElement;
+    const idx = pane ? paneIndexOf(pane) : -1;
+    if (idx !== -1 && prevFocusOnFullscreen !== -1 && focusedPaneIndex === idx) {
+      focusPane(prevFocusOnFullscreen);
+    }
+    prevFocusOnFullscreen = -1;
   });
 
   return webview;
