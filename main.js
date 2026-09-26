@@ -139,15 +139,16 @@ function getAdditionsPath() {
 function loadAdditions() {
   try {
     const p = getAdditionsPath();
-    if (!fs.existsSync(p)) return { safeDomains: [], passengers: [] };
+    if (!fs.existsSync(p)) return { safeDomains: [], pending: [], passengers: [] };
     const obj = JSON.parse(fs.readFileSync(p, 'utf8'));
     return {
       safeDomains: Array.isArray(obj.safeDomains) ? obj.safeDomains.filter(d => typeof d === 'string' && d) : [],
+      pending: Array.isArray(obj.pending) ? obj.pending.filter(d => typeof d === 'string' && d) : [],
       passengers: Array.isArray(obj.passengers) ? obj.passengers.filter(d => typeof d === 'string' && d) : []
     };
   } catch (err) {
     log('ERROR', 'Failed to read config additions: ' + err.message);
-    return { safeDomains: [], passengers: [] };
+    return { safeDomains: [], pending: [], passengers: [] };
   }
 }
 
@@ -1202,18 +1203,37 @@ ipcMain.on('recovery-test-result', (event, payload) => {
   const domains = payload.domains.map(d => String(d).toLowerCase()).filter(Boolean);
   if (payload.passed === true) {
     if (pendingPromotion) clearTimeout(pendingPromotion.timer);
-    log('CONFIG', 'Recovery test passed; promoting in 60s if playback stays stable: ' + domains.join(', '));
+    // Write-on-pass: the domain is saved to the additions file and merged
+    // into the active config IMMEDIATELY — quitting right after a successful
+    // test loses nothing. The 60s soak that follows is background
+    // verification, not a gate: recovery-soak-failed rolls the domains back
+    // if playback dies inside the window, otherwise the timer clears their
+    // pending flag and they stand as permanent local additions.
+    log('CONFIG', 'Recovery test passed; saved locally immediately: ' + domains.join(', '));
+    try {
+      const additions = loadAdditions();
+      additions.safeDomains = Array.from(new Set([...additions.safeDomains, ...domains]));
+      additions.pending = Array.from(new Set([...(additions.pending || []), ...domains]));
+      saveAdditions(additions);
+      activeConfig.safeDomains = Array.from(new Set([...activeConfig.safeDomains, ...domains]));
+      log('CONFIG', 'Kept if playback holds 60s; rolled back automatically if it fails: ' + domains.join(', '));
+    } catch (err) {
+      log('ERROR', 'Failed to write config additions: ' + err.message);
+    }
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('recovery-promoted', { domains });
+    }
     pendingPromotion = {
       domains,
       timer: setTimeout(() => {
         pendingPromotion = null;
-        const additions = loadAdditions();
-        additions.safeDomains = Array.from(new Set([...additions.safeDomains, ...domains]));
-        saveAdditions(additions);
-        activeConfig.safeDomains = Array.from(new Set([...activeConfig.safeDomains, ...domains]));
-        log('CONFIG', 'Promoted local addition(s) after 60s stable: ' + domains.join(', '));
-        if (win && !win.isDestroyed()) {
-          win.webContents.send('recovery-promoted', { domains });
+        try {
+          const additions = loadAdditions();
+          additions.pending = (additions.pending || []).filter(d => !domains.includes(d));
+          saveAdditions(additions);
+          log('CONFIG', 'Verified local addition(s) after 60s stable: ' + domains.join(', '));
+        } catch (err) {
+          log('ERROR', 'Failed to verify config additions: ' + err.message);
         }
       }, 60000)
     };
@@ -1230,6 +1250,29 @@ ipcMain.on('recovery-test-result', (event, payload) => {
       knownPassengers.add(domains[0]);
       log('CONFIG', 'Recorded passenger (solo test failed): ' + domains[0]);
     }
+  }
+});
+
+// Rollback counterpart to write-on-pass: the renderer reports that the
+// recovered stream died inside the soak window, so the domains are removed
+// from the additions file, the merged config, and the runtime allow-set.
+ipcMain.on('recovery-soak-failed', (event, payload) => {
+  if (!pendingPromotion || !payload || !Array.isArray(payload.domains)) return;
+  const failed = payload.domains.map(d => String(d).toLowerCase()).filter(Boolean);
+  if (failed.length === 0) return;
+  if (pendingPromotion.timer) clearTimeout(pendingPromotion.timer);
+  pendingPromotion = null;
+  const failedSet = new Set(failed);
+  for (const d of failed) runtimeAllowedDomains.delete(d);
+  try {
+    const additions = loadAdditions();
+    additions.safeDomains = additions.safeDomains.filter(d => !failedSet.has(d));
+    additions.pending = (additions.pending || []).filter(d => !failedSet.has(d));
+    saveAdditions(additions);
+    activeConfig.safeDomains = activeConfig.safeDomains.filter(d => !failedSet.has(d));
+    log('CONFIG', 'Rolled back recovery addition(s) — playback failed during soak: ' + failed.join(', '));
+  } catch (err) {
+    log('ERROR', 'Failed to roll back config additions: ' + err.message);
   }
 });
 
@@ -1285,8 +1328,22 @@ app.whenReady().then(async () => {
   activeConfig = await loadConfig();
 
   const additions = loadAdditions();
+  // Dedup against the gist: a domain that reached the gist no longer needs
+  // a local copy. Prune it from the additions file so the file only ever
+  // holds what the gist lacks.
+  const gistDomains = new Set(activeConfig.safeDomains);
+  const pruned = additions.safeDomains.filter(d => gistDomains.has(d));
+  if (pruned.length > 0) {
+    additions.safeDomains = additions.safeDomains.filter(d => !gistDomains.has(d));
+    additions.pending = (additions.pending || []).filter(d => !gistDomains.has(d));
+    saveAdditions(additions);
+    log('CONFIG', 'Pruned local addition(s) already in gist config: ' + pruned.join(', '));
+  }
   if (additions.safeDomains.length > 0) {
     activeConfig.safeDomains = Array.from(new Set([...activeConfig.safeDomains, ...additions.safeDomains]));
+  }
+  if ((additions.pending || []).length > 0) {
+    log('CONFIG', 'Pending recovery addition(s) (saved on test-pass; rollback only applies during a fresh soak): ' + additions.pending.join(', '));
   }
   knownPassengers = new Set(additions.passengers);
 

@@ -173,7 +173,7 @@ function applyAudioState() {
       // (accented) vs silent (greyed, click to hear).
       const active = (index === focusedPaneIndex);
       soundBtn.style.display = (paneCount > 1 && !guideOpen) ? '' : 'none';
-      soundBtn.textContent = active ? '\u{1F50A}' : '\u{1F507}';
+      soundBtn.textContent = active ? '🔊' : '🔇';
       soundBtn.classList.toggle('active', active);
     }
     // The guide button is meaningless while its own guide is open (Escape
@@ -285,7 +285,7 @@ function ensurePaneControls(pane) {
   const soundBtn = document.createElement('button');
   soundBtn.className = 'pane-sound-btn';
   soundBtn.title = 'Play audio from this view';
-  soundBtn.textContent = '\u{1F507}';
+  soundBtn.textContent = '🔇';
   soundBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     focusPane(paneIndexOf(pane));
@@ -636,6 +636,10 @@ function failStreamAttempt(attempt) {
     pendingRecoveryTest = null;
   }
   if (pendingPromotionView && pendingPromotionView.pane === attempt.pane) {
+    // Write-on-pass rollback: the recovered stream died inside the soak
+    // window — tell main to remove the just-saved domains everywhere.
+    sendIpc('recovery-soak-failed', { domains: pendingPromotionView.domains });
+    logToMain('[RECOVERY] playback failed during soak; rolled back: ' + pendingPromotionView.domains.join(', '));
     pendingPromotionView = null;
   }
 
@@ -676,7 +680,7 @@ function showRecoverySuccess(pane, domains) {
 
   const sub = document.createElement('div');
   sub.style.cssText = 'color:#999;font-size:13px;margin-bottom:14px;';
-  sub.textContent = domains.join(', ') + ' added to local config after 60s of stable playback.';
+  sub.textContent = domains.join(', ') + ' saved to your local config — kept if playback holds for 60s, removed automatically if the stream fails.';
   box.appendChild(sub);
 
   const snipLabel = document.createElement('div');

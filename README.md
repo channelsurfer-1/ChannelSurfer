@@ -207,9 +207,13 @@ that were blocked while the player loaded:
 - `likely ad` — almost certainly an ad; left unselected.
 
 Click **Test selected** to try the checked set. If playback recovers, the
-domains are saved on your machine and you're shown a short snippet to share
-with the maintainer. Failed guesses are remembered and won't be repeated.
-The app never changes the shared configuration by itself.
+domains are saved on your machine immediately — no waiting — and you're shown
+a short snippet to share with the maintainer. The app then watches the stream
+for 60 seconds: if playback fails inside that window, the domains are removed
+again automatically. Once a domain reaches the shared config (the gist),
+your local copy of it is cleaned up on the next launch. Failed guesses are
+remembered and won't be repeated. The app never changes the shared
+configuration by itself.
 
 ## Build
 
