@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-const SEND_ALLOWED = ['register-stream-attempt', 'unregister-stream-attempt', 'renderer-log', 'schedule-rendered', 'allow-recovery-domains', 'recovery-test-result', 'recovery-soak-failed', 'copy-text', 'webview-bounds', 'set-pane-audio-focus'];
+const SEND_ALLOWED = ['register-stream-attempt', 'unregister-stream-attempt', 'renderer-log', 'schedule-rendered', 'allow-recovery-domains', 'recovery-test-result', 'recovery-soak-failed', 'copy-text', 'webview-bounds', 'set-pane-audio-focus', 'unregister-health'];
 const INVOKE_ALLOWED = ['get-schedule-path', 'get-stream-base-urls', 'get-debug-mode', 'get-recovery-candidates'];
 
 contextBridge.exposeInMainWorld('channelSurfer', {
@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('channelSurfer', {
       return ipcRenderer.invoke(channel);
     }
     return Promise.reject(new Error('channel not allowed: ' + channel));
+  },
+  onStreamHealth(handler) {
+    ipcRenderer.on('stream-health', (event, payload) => handler(payload));
   },
   onStreamSuccess(handler) {
     ipcRenderer.on('stream-attempt-success', (event, payload) => handler(payload));

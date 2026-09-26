@@ -33,6 +33,14 @@ const failedRecoveryCombos = new Set(); // recovery: tested-and-failed domain se
 let pendingRecoveryTest = null;         // recovery: { key, pane, domains } while a test retry is in flight
 let pendingPromotionView = null;        // recovery: { pane, domains } while main runs the 60s soak
 
+// Playback stall watchdog (09-26): main samples each connected stream's
+// player frame every 2s and reports here; a pane whose currentTime stops
+// advancing while un-paused (and no failover is in flight) is re-streamed.
+// Catches the frozen-video desync class; the smooth-picture/audio-only
+// class is undetectable from outside the guest (guest-side DSP declined).
+const STALL_TIMEOUT_MS = 10000;
+const paneHealth = new Map(); // webContentsId -> { lastTime, lastProgressAt, alerted }
+
 if (!document.getElementById('connecting-dots-style')) {
   const style = document.createElement('style');
   style.id = 'connecting-dots-style';
@@ -450,6 +458,8 @@ function cancelStreamAttempt(pane) {
   }
   if (attempt.webContentsId !== null) {
     sendIpc('unregister-stream-attempt', { webContentsId: attempt.webContentsId });
+    sendIpc('unregister-health', { webContentsId: attempt.webContentsId });
+    paneHealth.delete(attempt.webContentsId);
     attempt.webContentsId = null;
   }
   if (attempt.webview) {
@@ -1596,6 +1606,43 @@ document.addEventListener('DOMContentLoaded', () => {
           succeedStreamAttempt(attempt);
           return;
         }
+      }
+    });
+
+    // Stall watchdog: see paneHealth declaration above. Only the
+    // frozen-video class is detectable this way; paused (idle triangle)
+    // and buffering states are excluded on purpose.
+    window.channelSurfer.onStreamHealth((payload) => {
+      if (!payload || typeof payload.webContentsId !== 'number' || !payload.available) return;
+
+      let pane = null;
+      for (const p of allPanes()) {
+        const wv = p.querySelector('webview');
+        if (!wv) continue;
+        try { if (wv.getWebContentsId() === payload.webContentsId) { pane = p; break; } } catch (_) {}
+      }
+      if (!pane) return;
+      const slot = paneIndexOf(pane);
+      if (slot === -1 || slot >= paneCount) return;
+      if (streamAttempts.has(pane)) return;    // failover window — not a stall
+      if (!panePrograms[slot]) return;         // nothing expected in this slot
+      if (payload.paused || payload.readyState < 2) return; // paused/buffering excluded
+
+      const now = Date.now();
+      const h = paneHealth.get(payload.webContentsId) || { lastTime: -1, lastProgressAt: now, alerted: false };
+      if (payload.currentTime !== h.lastTime) {
+        h.lastTime = payload.currentTime;
+        h.lastProgressAt = now;
+        h.alerted = false;
+      }
+      paneHealth.set(payload.webContentsId, h);
+
+      if (!h.alerted && now - h.lastProgressAt > STALL_TIMEOUT_MS) {
+        h.alerted = true;
+        const program = panePrograms[slot];
+        logToMain('[WATCHDOG] stalled ' + Math.round((now - h.lastProgressAt) / 1000) +
+          's in pane ' + (slot + 1) + ' (' + program.stationName + '); re-streaming');
+        attemptStream(pane, slot, program.stationName, program.dlhdId, program.programName);
       }
     });
 

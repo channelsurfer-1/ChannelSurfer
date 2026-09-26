@@ -21,6 +21,47 @@ let blockedDomainsLogged = new Set();
 let streamPlayerDomains = new Set();
 const trackedStreamWebviews = new Set();
 
+// Health tracking for the playback stall watchdog: unlike attempt tracking,
+// these survive a successful connect (a connected stream can stall later)
+// and are removed only on webview destroy or renderer teardown.
+const healthTrackedWebviews = new Set();
+let healthPollTimer = null;
+
+const HEALTH_PROBE_SCRIPT = `
+  (function() {
+    var v = document.querySelector('video');
+    if (!v) return { available: false };
+    return { available: true, t: v.currentTime, paused: !!v.paused, rs: v.readyState };
+  })()
+`;
+
+function startHealthPoll() {
+  if (healthPollTimer) return;
+  healthPollTimer = setInterval(() => {
+    if (!win || win.isDestroyed()) return;
+    for (const id of Array.from(healthTrackedWebviews)) {
+      const wc = webContents.fromId(id);
+      if (!wc || wc.isDestroyed()) { healthTrackedWebviews.delete(id); continue; }
+      const f = findPlayerFrame(wc);
+      if (!f) continue;
+      f.executeJavaScript(HEALTH_PROBE_SCRIPT, true)
+        .then((res) => {
+          if (!win || win.isDestroyed()) return;
+          if (res && typeof res === 'object') {
+            win.webContents.send('stream-health', {
+              webContentsId: id,
+              available: res.available === true,
+              currentTime: typeof res.t === 'number' ? res.t : -1,
+              paused: res.paused === true,
+              readyState: typeof res.rs === 'number' ? res.rs : 0
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, 2000);
+}
+
 const blockedDomainRefs = new Map();
 const runtimeAllowedDomains = new Set();
 let knownPassengers = new Set();
@@ -618,22 +659,28 @@ function warmUpPlayer(wcId) {
 
   warmedUp.add(wcId);
 
+  // Kick ONLY a genuinely idle player. The post-cutover skin toggles
+  // play/pause on a video click — clicking a stream that claims to be
+  // playing pauses it ~1s in ("tap to play" poster). The old skin
+  // swallowed the click, which is why this went unnoticed until the
+  // daddyliveplayer.st cutover (09-26).
   const script = `
     (function() {
-      const v = document.querySelector('video') || document.body;
-      const r = v && v.getBoundingClientRect ? v.getBoundingClientRect() : { left:0, top:0, width:100, height:100 };
+      const v = document.querySelector('video');
+      if (v && !v.paused) return 'already-playing';
+      const t = v || document.body;
+      const r = t && t.getBoundingClientRect ? t.getBoundingClientRect() : { left:0, top:0, width:100, height:100 };
       const x = (r.left || 0) + (r.width || 100) / 2;
       const y = (r.top || 0) + (r.height || 100) / 2;
       const opts = { clientX: x, clientY: y, bubbles: true, cancelable: true, view: window, button: 0 };
-      const ev = new MouseEvent('click', opts);
-      v.dispatchEvent(ev);
-      return true;
+      t.dispatchEvent(new MouseEvent('click', opts));
+      return 'clicked';
     })()
   `;
 
   target.executeJavaScript(script, true)
-    .then(() => {
-      if (debug.enabled) log('WARM', 'warm-up click fired wc=' + wcId);
+    .then((result) => {
+      if (debug.enabled) log('WARM', 'warm-up ' + result + ' wc=' + wcId);
     })
     .catch((err) => {
       warmedUp.delete(wcId);
@@ -861,22 +908,27 @@ const PANE_FOCUS_SYNC_SCRIPT = (focused) => `
     st.textContent = focused
       ? ''
       : '.media-control .drawer-container { opacity: 0.3 !important; pointer-events: none !important; }';
+    // Post-cutover (daddyliveplayer.st) skins may not expose the drawer
+    // icon at all — fall back to element-level mute so focus sync works
+    // on every skin (09-26: no-icon forever on the new player).
     var icon = document.querySelector('.drawer-icon[data-volume]') || document.querySelector('.drawer-icon');
-    if (!icon) return 'no-icon';
-    var isMuted = icon.classList.contains('muted');
+    var v = document.querySelector('video');
+    var isMuted = (icon && icon.classList.contains('muted')) || (v && v.muted);
     if (focused) {
       // Unmute ONLY if this script muted the pane. No flag = user mute;
       // it sticks — the corner button chose this pane as the audio owner,
       // but the user silenced it, and that decision is theirs.
       if (isMuted && window.__csSyncMuted === true) {
         window.__csSyncMuted = false;
-        try { icon.click(); } catch (e) {}
+        if (icon) { try { icon.click(); } catch (e) {} }
+        else if (v) { v.muted = false; }
         return 'unmuted';
       }
       return 'no-op';
     }
     if (!isMuted) {
-      try { icon.click(); } catch (e) {}
+      if (icon) { try { icon.click(); } catch (e) {} }
+      else if (v) { v.muted = true; }
       window.__csSyncMuted = true;
       return 'muted';
     }
@@ -889,15 +941,31 @@ ipcMain.on('set-pane-audio-focus', (event, payload) => {
   const id = payload.webContentsId;
   const focused = payload.focused === true;
   audioFocusByWc.set(id, focused);
-  const wc = webContents.fromId(id);
-  if (!wc || wc.isDestroyed()) return;
-  const f = findPlayerFrame(wc);
-  if (!f) return;
-  f.executeJavaScript(PANE_FOCUS_SYNC_SCRIPT(focused), false)
-    .then((action) => {
-      if (debug.enabled && action !== 'no-icon') log('FOCUS', 'pane sync ' + action + ' wc=' + id);
-    })
-    .catch(() => {});
+
+  // Retry, don't give up: at connect time the player frame may not exist
+  // yet when focus arrives — a silent early-return left new panes
+  // permanently muted (09-26). The stale-retry guard kills retries that a
+  // newer focus state has superseded.
+  let tries = 0;
+  const trySync = () => {
+    // Stale-retry guard: a newer set-pane-audio-focus may have superseded
+    // this one while we waited (09-26: a late focused=false retry re-muted
+    // a pane the success path had just unmuted).
+    if (audioFocusByWc.get(id) !== focused) return;
+    const wc = webContents.fromId(id);
+    if (!wc || wc.isDestroyed()) return;
+    const f = findPlayerFrame(wc);
+    if (!f) {
+      if (++tries < 8) setTimeout(trySync, 1000);
+      return;
+    }
+    f.executeJavaScript(PANE_FOCUS_SYNC_SCRIPT(focused), false)
+      .then((action) => {
+        if (debug.enabled && action !== 'no-op') log('FOCUS', 'pane sync ' + action + ' wc=' + id);
+      })
+      .catch(() => {});
+  };
+  trySync();
 });
 // ---------- End pane audio focus sync ----------
 
@@ -1302,6 +1370,13 @@ ipcMain.on('copy-text', (event, payload) => {
 ipcMain.on('register-stream-attempt', (event, payload) => {
   if (payload && typeof payload.webContentsId === 'number') {
     trackedStreamWebviews.add(payload.webContentsId);
+    healthTrackedWebviews.add(payload.webContentsId);
+  }
+});
+
+ipcMain.on('unregister-health', (event, payload) => {
+  if (payload && typeof payload.webContentsId === 'number') {
+    healthTrackedWebviews.delete(payload.webContentsId);
   }
 });
 
@@ -1321,6 +1396,10 @@ app.on('web-contents-created', (event, contents) => {
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
   if (contents.getType() === 'webview') {
     contents.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36');
+    contents.on('destroyed', () => {
+      healthTrackedWebviews.delete(contents.id);
+      trackedStreamWebviews.delete(contents.id);
+    });
     if (debug.enabled) {
       contents.on('did-navigate', (e, url) => {
         log('NAV', `NAV  wc=${contents.id} ${truncateUrl(url, 130)}`);
@@ -1390,6 +1469,7 @@ app.whenReady().then(async () => {
   createWindow();
 
   startCursorPoll();
+  startHealthPoll();
 
   let scheduleRetryTimer = null;
   let appQuitting = false;
