@@ -538,6 +538,31 @@ function runStreamAttempt(attempt) {
   indicator.style.justifyContent = 'center';
   indicator.style.fontSize = '1rem';
   indicator.style.zIndex = '100';
+  // Status display only — never eat clicks. At z-100 this overlay used to
+  // sit above the corner buttons (z-60), making × and the calendar dead
+  // while connecting: the pane ignored close/guide clicks for the whole
+  // failover window (09-27).
+  indicator.style.pointerEvents = 'none';
+  // Status display only — never eat clicks. At z-100 this overlay used to
+  // sit above the corner buttons (z-60), making × and the calendar dead
+  // while connecting: the pane ignored close/guide clicks for the whole
+  // failover window (09-27).
+  indicator.style.pointerEvents = 'none';
+  // Status display only — never eat clicks. At z-100 this overlay used to
+  // sit above the corner buttons (z-60), making × and the calendar dead
+  // while connecting: the pane ignored close/guide clicks for the whole
+  // failover window (09-27).
+  indicator.style.pointerEvents = 'none';
+  // Status display only — never eat clicks. At z-100 this overlay used to
+  // sit above the corner buttons (z-60), making × and the calendar dead
+  // while connecting: the pane ignored close/guide clicks for the whole
+  // failover window (09-27).
+  indicator.style.pointerEvents = 'none';
+  // Status display only — never eat clicks. At z-100 this overlay used to
+  // sit above the corner buttons (z-60), making × and the calendar dead
+  // while connecting: the pane ignored close/guide clicks for the whole
+  // failover window (09-27).
+  indicator.style.pointerEvents = 'none';
   const labelSpan = document.createElement('span');
   labelSpan.textContent = 'Connecting';
   labelSpan.appendChild(makeConnectingDots());
