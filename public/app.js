@@ -170,11 +170,21 @@ function applyFocusStyles() {
   });
 }
 
+function countActivePanes() {
+  return panePrograms.filter(Boolean).length;
+}
+
 function applyAudioState() {
   allPanes().forEach((pane) => {
     const index = Number(pane.dataset.pane);
     if (index >= paneCount) return;
     const guideOpen = !!pane.querySelector('.pane-schedule-overlay');
+    const gripBtn = pane.querySelector('.pane-grip-btn');
+    if (gripBtn) {
+      // Swap needs a partner: this pane occupied, another occupied pane
+      // exists, and no guide is covering this one.
+      gripBtn.style.display = (panePrograms[index] && countActivePanes() >= 2 && !guideOpen) ? '' : 'none';
+    }
     const wv = pane.querySelector('webview');
     if (wv) {
       const focused = (index === focusedPaneIndex);
@@ -288,6 +298,148 @@ function closePane(index) {
   }
 }
 
+// ---------- Pane drag-swap (09-27) ----------
+// Initiated from each pane's grip handle — the video surface can't receive
+// the grab (mousedown over a webview routes to the guest). On drop, the
+// two panes' SLOTS exchange: data-pane attributes, state-array entries,
+// and focus. The divs (and their webviews, overlays, labels) never move —
+// moving a webview kills the guest (Spike 1). The data-pane remap model
+// re-places them visually; renderView finds each slot's channel-matching
+// webview already in the right div, so a swap NEVER re-streams.
+// Occupied panes only, and a pane with its schedule open is out of the
+// swap game in BOTH directions (swapping would teleport a live browsing
+// session).
+let dragSourceSlot = -1;
+let dragActive = false;
+// Active drag's cursor-stream callback (registered once at boot, routed here).
+let dragCursorHandler = null;
+
+function paneSlotAtPoint(x, y) {
+  for (const pane of allPanes()) {
+    const slot = Number(pane.dataset.pane);
+    if (slot >= paneCount || slot === dragSourceSlot) continue;
+    if (!panePrograms[slot]) continue; // occupied panes only
+    // A pane with its schedule open is out of the swap game (both
+    // directions): swapping would teleport a live browsing session.
+    if (pane.querySelector('.pane-schedule-overlay')) continue;
+    const r = pane.getBoundingClientRect();
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return slot;
+  }
+  return -1;
+}
+
+function startPaneDrag(slot, startX, startY) {
+  // Cursor-poll drag (09-27): the host renderer is blind to mouse events
+  // over webview guests, so document mousemove cannot track a drag that
+  // crosses video surfaces. Main streams OS cursor points (10 Hz) while
+  // the drag is armed; drop = cursor still for DROP_STILLNESS_MS, a
+  // mouseup that reaches host chrome, or Escape to cancel.
+  dragSourceSlot = slot;
+  dragActive = false;
+  let lastTarget = -1;
+  let watchdogTimer = null;
+  let armTimer = null;
+  let lastX = 0;
+  let lastY = 0;
+  let lastChangeAt = 0;
+  const sourcePane = getPane(slot);
+  const DROP_STILLNESS_MS = 800;
+
+  const toClient = (sx, sy) => ({ x: sx - window.screenX, y: sy - window.screenY });
+
+  const finish = (commit) => {
+    if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
+    if (armTimer) { clearTimeout(armTimer); armTimer = null; }
+    document.removeEventListener('mouseup', onUpDoc, true);
+    document.removeEventListener('keydown', onKey, true);
+    sendIpc('drag-arm', { armed: false });
+    document.body.style.cursor = 'default';
+    if (sourcePane) sourcePane.classList.remove('pane-drag-source');
+    if (lastTarget !== -1) {
+      const p = getPane(lastTarget);
+      if (p) p.classList.remove('pane-drag-target');
+    }
+    if (commit && dragActive && lastTarget !== -1 && lastTarget !== slot) {
+      swapPaneSlots(slot, lastTarget);
+    }
+    dragActive = false;
+    dragSourceSlot = -1;
+    dragCursorHandler = null;
+  };
+
+  const onCursor = (payload) => {
+    if (!payload || typeof payload.x !== 'number') return;
+    // Payload is already content-relative (converted in main).
+    const c = { x: payload.x, y: payload.y };
+    if (!dragActive) {
+      if (Math.abs(c.x - startX) <= 4 && Math.abs(c.y - startY) <= 4) {
+        return; // merely armed, still aiming — stillness only applies to a real drag
+      }
+      dragActive = true;
+      document.body.style.cursor = 'grabbing';
+      if (sourcePane) sourcePane.classList.add('pane-drag-source');
+      lastX = c.x; lastY = c.y; lastChangeAt = Date.now();
+      // Position-based stillness: the stream keeps ticking at 10 Hz while
+      // the cursor is stationary, so silence can never be observed (each
+      // tick resets a silence timer — bug 09-27). A watchdog measures how
+      // long the POSITION has been unchanged instead.
+      watchdogTimer = setInterval(() => {
+        if (Date.now() - lastChangeAt > DROP_STILLNESS_MS) finish(true);
+      }, 200);
+    } else if (Math.abs(c.x - lastX) > 2 || Math.abs(c.y - lastY) > 2) {
+      lastX = c.x; lastY = c.y; lastChangeAt = Date.now();
+    }
+    const target = paneSlotAtPoint(c.x, c.y);
+    if (target !== lastTarget) {
+      if (lastTarget !== -1) {
+        const p = getPane(lastTarget);
+        if (p) p.classList.remove('pane-drag-target');
+      }
+      if (target !== -1) {
+        const p = getPane(target);
+        if (p) p.classList.add('pane-drag-target');
+      }
+      lastTarget = target;
+    }
+  };
+
+  const onUpDoc = () => finish(true);
+  const onKey = (e) => { if (e.key === 'Escape') finish(false); };
+
+  dragCursorHandler = onCursor;
+  sendIpc('drag-arm', { armed: true });
+  document.addEventListener('mouseup', onUpDoc, true);
+  document.addEventListener('keydown', onKey, true);
+  // No stillness clock while merely armed — pressing the grip and studying
+  // the screen must not cancel the drag (bug 09-27: a 600ms hesitation
+  // disarmed before movement began). A 10s fuse guards a lost mouseup.
+  armTimer = setTimeout(() => finish(false), 10000);
+}
+
+function swapPaneSlots(a, b) {
+  if (a === b) return;
+  const paneA = getPane(a);
+  const paneB = getPane(b);
+  if (!paneA || !paneB) return;
+
+  // Exchange slot assignments only — contents never move.
+  paneA.dataset.pane = String(b);
+  paneB.dataset.pane = String(a);
+
+  const swapArr = (arr) => { const t = arr[a]; arr[a] = arr[b]; arr[b] = t; };
+  swapArr(panePrograms);
+  swapArr(paneOverlayOpen);
+  swapArr(paneScroll);
+
+  if (focusedPaneIndex === a) focusedPaneIndex = b;
+  else if (focusedPaneIndex === b) focusedPaneIndex = a;
+
+  renderView();
+  if (isDebug()) {
+    logToMain('[VIEW] swapped panes ' + (a + 1) + ' <-> ' + (b + 1));
+  }
+}
+
 function ensurePaneControls(pane) {
   if (pane.querySelector('.pane-controls')) return;
 
@@ -339,6 +491,25 @@ function ensurePaneControls(pane) {
     closePane(paneIndexOf(pane));
   });
 
+  // Drag grip: initiates pane drag-swap (the video surface can't receive
+  // the grab — mousedown over a webview routes to the guest). Four arrows
+  // = "move". Visibility (applyAudioState): only when this pane is
+  // occupied AND at least one other occupied pane exists (a swap needs a
+  // partner) AND this pane's own guide isn't open.
+  const gripBtn = document.createElement('button');
+  gripBtn.className = 'pane-grip-btn';
+  gripBtn.title = 'Drag onto another pane to swap';
+  gripBtn.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 9.4V3.4M6 5.4l2-2 2 2"/><path d="M8 6.6v6M6 10.6l2 2 2-2"/><path d="M9.4 8H3.4M5.4 6l-2 2 2 2"/><path d="M6.6 8h6M10.6 6l2 2-2 2"/></svg>';
+  gripBtn.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const slot = paneIndexOf(pane);
+    if (slot === -1 || slot >= paneCount) return;
+    if (!panePrograms[slot]) return; // occupied panes only
+    startPaneDrag(slot, e.clientX, e.clientY);
+  });
+
+  controls.appendChild(gripBtn);
   controls.appendChild(guideBtn);
   controls.appendChild(soundBtn);
   controls.appendChild(closeBtn);
@@ -538,26 +709,6 @@ function runStreamAttempt(attempt) {
   indicator.style.justifyContent = 'center';
   indicator.style.fontSize = '1rem';
   indicator.style.zIndex = '100';
-  // Status display only — never eat clicks. At z-100 this overlay used to
-  // sit above the corner buttons (z-60), making × and the calendar dead
-  // while connecting: the pane ignored close/guide clicks for the whole
-  // failover window (09-27).
-  indicator.style.pointerEvents = 'none';
-  // Status display only — never eat clicks. At z-100 this overlay used to
-  // sit above the corner buttons (z-60), making × and the calendar dead
-  // while connecting: the pane ignored close/guide clicks for the whole
-  // failover window (09-27).
-  indicator.style.pointerEvents = 'none';
-  // Status display only — never eat clicks. At z-100 this overlay used to
-  // sit above the corner buttons (z-60), making × and the calendar dead
-  // while connecting: the pane ignored close/guide clicks for the whole
-  // failover window (09-27).
-  indicator.style.pointerEvents = 'none';
-  // Status display only — never eat clicks. At z-100 this overlay used to
-  // sit above the corner buttons (z-60), making × and the calendar dead
-  // while connecting: the pane ignored close/guide clicks for the whole
-  // failover window (09-27).
-  indicator.style.pointerEvents = 'none';
   // Status display only — never eat clicks. At z-100 this overlay used to
   // sit above the corner buttons (z-60), making × and the calendar dead
   // while connecting: the pane ignored close/guide clicks for the whole
@@ -1670,6 +1821,16 @@ document.addEventListener('DOMContentLoaded', () => {
         attemptStream(pane, slot, program.stationName, program.dlhdId, program.programName);
       }
     });
+
+    // Pane drag-swap cursor stream (09-27): main polls the OS cursor at
+    // 10 Hz and streams points while a drag is armed (host mouse events
+    // don't cross webview guests). Registered once; routed to the active
+    // drag via dragCursorHandler.
+    if (window.channelSurfer.onDragCursor) {
+      window.channelSurfer.onDragCursor((payload) => {
+        if (dragCursorHandler) dragCursorHandler(payload);
+      });
+    }
 
     window.channelSurfer.onScheduleReady((payload) => {
       if (payload && typeof payload.path === 'string' && payload.path) {

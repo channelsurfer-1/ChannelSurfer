@@ -68,6 +68,10 @@ let knownPassengers = new Set();
 const chainHosts = new Set();
 const shellHosts = new Set();
 let pendingPromotion = null;
+// Pane drag-swap (09-27): when the renderer arms a drag, the cursor poll
+// streams OS cursor points to it - the host renderer is blind over
+// webview guests, so the drag cannot be tracked with document events.
+let dragArmed = false;
 
 // ---------- Logging ----------
 function log(category, message) {
@@ -835,6 +839,21 @@ function pulseControls(wcId) {
 function startCursorPoll() {
   if (cursorPollTimer) return;
   cursorPollTimer = setInterval(() => {
+    // Drag stream: while a pane drag is armed, the OS cursor position
+    // goes to the renderer every tick, regardless of what surface the
+    // cursor is over (webview guests swallow host mouse events).
+    if (dragArmed && win && !win.isDestroyed()) {
+      let pt;
+      try { pt = screen.getCursorScreenPoint(); } catch (_) { pt = null; }
+      if (pt) {
+        // Convert to CONTENT-relative coordinates here: the screen module
+        // and the renderer's window.screenX/Y disagree on macOS (Retina /
+        // multi-display space mismatch), so the renderer must never do
+        // this subtraction itself.
+        const cb = win.getContentBounds();
+        win.webContents.send('drag-cursor', { x: pt.x - cb.x, y: pt.y - cb.y });
+      }
+    }
     if (webviewBounds.size === 0) {
       cursorOverWcId = null;
       lastCursorX = -1;
@@ -1378,6 +1397,10 @@ ipcMain.on('unregister-health', (event, payload) => {
   if (payload && typeof payload.webContentsId === 'number') {
     healthTrackedWebviews.delete(payload.webContentsId);
   }
+});
+
+ipcMain.on('drag-arm', (event, payload) => {
+  dragArmed = !!(payload && payload.armed);
 });
 
 ipcMain.on('unregister-stream-attempt', (event, payload) => {
