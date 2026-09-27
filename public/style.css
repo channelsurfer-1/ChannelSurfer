@@ -580,7 +580,7 @@ body {
   padding: 0;
 }
 .pane-grip-btn:hover { border-color: var(--accent); }
-.pane-grip-btn svg { width: 14px; height: 14px; display: block; }
+.pane-grip-btn svg { width: 20px; height: 20px; display: block; }
 
 /* Drag-swap feedback: the source dims while dragged; a valid drop target
    wears the same accent ring as the focused pane. */

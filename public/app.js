@@ -499,7 +499,7 @@ function ensurePaneControls(pane) {
   const gripBtn = document.createElement('button');
   gripBtn.className = 'pane-grip-btn';
   gripBtn.title = 'Drag onto another pane to swap';
-  gripBtn.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 9.4V3.4M6 5.4l2-2 2 2"/><path d="M8 6.6v6M6 10.6l2 2 2-2"/><path d="M9.4 8H3.4M5.4 6l-2 2 2 2"/><path d="M6.6 8h6M10.6 6l2 2-2 2"/></svg>';
+  gripBtn.innerHTML = '<svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><g stroke="currentColor" stroke-width="1.1" stroke-linecap="round" fill="none"><line x1="8" y1="5.3" x2="8" y2="10.7"/><line x1="5.3" y1="8" x2="10.7" y2="8"/></g><g fill="currentColor"><path d="M8 2.7L6.4 5.3 9.6 5.3Z"/><path d="M8 13.3L6.4 10.7 9.6 10.7Z"/><path d="M2.7 8L5.3 6.4 5.3 9.6Z"/><path d="M13.3 8L10.7 6.4 10.7 9.6Z"/></g></svg>';
   gripBtn.addEventListener('mousedown', (e) => {
     e.preventDefault();
     e.stopPropagation();
