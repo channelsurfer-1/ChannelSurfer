@@ -63,6 +63,9 @@ Watch up to four channels at once.
   four in a 2×2 grid. The layout is automatic; there's nothing to choose.
 - Click **×** on a view to close it. The remaining views keep playing and
   reflow to fill the space; closing the last view returns it to the guide.
+- Drag the **move-arrow grip** in a view's top-right corner onto another
+  view to swap them — the two streams trade places instantly, no
+  reconnecting. Hold on the target for a moment to drop.
 - Only one view plays audio at a time. The speaker button in a view's
   top-right corner selects which one: the blue speaker marks the view you
   hear, and clicking the grey speaker in any other view moves the audio
@@ -74,7 +77,8 @@ Watch up to four channels at once.
 - A view that isn't playing audio has its volume controls dimmed and
   disabled — activate the view first, then adjust.
 - Individual views expand to fullscreen when the player's fullscreen
-  button is clicked.
+  button is clicked. The fullscreen view becomes the audio source;
+  leaving fullscreen restores the previous one.
 - Every live view consumes network bandwidth.
 
 ### 🔊 Sound Where You Expect It
@@ -87,7 +91,9 @@ Watch up to four channels at once.
 
 ### 🔄 Automatic Failover
 
-The stream source occasionally changes the domains and URL paths it uses to serve content. When this happens, ChannelSurfer tries a list of known player URLs in order and uses the first one that plays. Recovery is automatic — no action needed from the user.
+The stream source occasionally changes the domains and URL paths it uses to serve content. When this happens, ChannelSurfer tries a list of known player URLs in order and uses the first one that plays. Recovery is automatic — no action needed from the user. If a playing
+stream freezes, the app detects the stall and restarts that stream on its
+own.
 
 ### 🛡️ Built-in Protection
 
