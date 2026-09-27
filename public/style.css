@@ -564,6 +564,32 @@ body {
   border-color: var(--danger);
 }
 
+/* Drag grip (09-27): same chrome as its sibling buttons; initiates pane
+   drag-swap. */
+.pane-grip-btn {
+  width: 28px;
+  height: 28px;
+  background-color: var(--overlay-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.pane-grip-btn:hover { border-color: var(--accent); }
+.pane-grip-btn svg { width: 14px; height: 14px; display: block; }
+
+/* Drag-swap feedback: the source dims while dragged; a valid drop target
+   wears the same accent ring as the focused pane. */
+.view-pane.pane-drag-source { opacity: 0.55; }
+.view-pane.pane-drag-target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
 webview {
   width: 100%;
   height: 100%;
