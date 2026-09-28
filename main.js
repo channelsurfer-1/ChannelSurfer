@@ -1423,6 +1423,40 @@ app.on('web-contents-created', (event, contents) => {
       healthTrackedWebviews.delete(contents.id);
       trackedStreamWebviews.delete(contents.id);
     });
+    // Player kick (09-27): the current JW Player build initializes fully in
+    // our webview but its autostart silently never fires (probe-verified:
+    // manual play() flips state idle -> playing and the m3u8 loads). Nudge
+    // any subframe that exposes a jwplayer global; no-op on Clappr/other
+    // skins. Retries until the state leaves idle; play() on a playing
+    // player is harmless.
+    contents.on('did-frame-finish-load', (event, isMainFrame, frameProcessId, frameRoutingId) => {
+      try {
+        const frame = contents.mainFrame.framesInSubtree.find((f) => f.routingId === frameRoutingId);
+        if (!frame || frame === contents.mainFrame || !/^https?:/i.test(frame.url)) return;
+        const marker = '__csKick' + frameRoutingId;
+        if (contents[marker]) return;
+        contents[marker] = true;
+        let tries = 0;
+        const kick = () => {
+          if (++tries > 5) return;
+          frame.executeJavaScript(`(function(){
+            if (typeof jwplayer !== 'function') return 'no-jw';
+            try {
+              var p = jwplayer('player');
+              var s = p.getState();
+              if (s === 'idle' || s === 'paused') { p.play(); return 'kicked:' + s; }
+              return 'state:' + s;
+            } catch (e) { return 'throw'; }
+          })()`, false)
+            .then((res) => {
+              if (debug.enabled) log('KICK', 'wc=' + contents.id + ' try=' + tries + ' -> ' + res);
+              if (res !== 'state:playing' && res !== 'state:buffering') setTimeout(kick, 1500);
+            })
+            .catch(() => { if (tries < 5) setTimeout(kick, 1500); });
+        };
+        setTimeout(kick, 1500);
+      } catch (_) {}
+    });
     if (debug.enabled) {
       contents.on('did-navigate', (e, url) => {
         log('NAV', `NAV  wc=${contents.id} ${truncateUrl(url, 130)}`);
