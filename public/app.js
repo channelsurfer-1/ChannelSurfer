@@ -453,7 +453,7 @@ function ensurePaneControls(pane) {
   const guideBtn = document.createElement('button');
   guideBtn.className = 'pane-guide-btn';
   guideBtn.title = 'Show the guide';
-  guideBtn.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="1.75" y="2.75" width="12.5" height="11.5" rx="2"/><line x1="1.75" y1="6.5" x2="14.25" y2="6.5"/><line x1="5" y1="1.25" x2="5" y2="4.25"/><line x1="11" y1="1.25" x2="11" y2="4.25"/></svg>';
+  guideBtn.innerHTML = '<svg viewBox="0 0 25 25" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="7" y="0.5" width="1.6" height="3" rx="0.8"/><rect x="16.4" y="0.5" width="1.6" height="3" rx="0.8"/><path fill-rule="evenodd" d="M4.5 3.5 h16 a2.5 2.5 0 0 1 2.5 2.5 v14.5 a2.5 2.5 0 0 1 -2.5 2.5 h-16 a2.5 2.5 0 0 1 -2.5 -2.5 V6 a2.5 2.5 0 0 1 2.5 -2.5 Z M4 5.5 h17 v15.5 h-17 Z"/><rect x="5.5" y="9.6" width="14" height="2.8" rx="1.4"/><rect x="5.5" y="14.1" width="14" height="2.8" rx="1.4"/></svg>';
   guideBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     const idx = paneIndexOf(pane);
