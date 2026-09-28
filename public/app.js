@@ -510,8 +510,8 @@ function ensurePaneControls(pane) {
   });
 
   controls.appendChild(gripBtn);
-  controls.appendChild(guideBtn);
   controls.appendChild(soundBtn);
+  controls.appendChild(guideBtn);
   controls.appendChild(closeBtn);
   pane.appendChild(controls);
 }
