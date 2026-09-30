@@ -1568,6 +1568,9 @@ function populateScheduleList(listContainer, pane, paneIndex) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Hide the raw-HTML skeleton (empty pane + border strips) that
+  // paints before the renderer builds the panes; revealed by CSS.
+  document.body.classList.add('booted');
   let schedulePath = '../data/schedule.json';
 
   const addViewBtn = document.getElementById('add-view-btn');
@@ -1860,7 +1863,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const themeBg = bodyStyle.backgroundColor !== 'rgba(0, 0, 0, 0)'
     ? bodyStyle.backgroundColor
     : getComputedStyle(document.documentElement).backgroundColor;
-  statusScreen.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:1.1rem;z-index:1000;background:' + themeBg + ';color:' + bodyStyle.color + ';';
+  statusScreen.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:1rem;z-index:1000;background:' + themeBg + ';color:' + bodyStyle.color + ';';
   document.body.appendChild(statusScreen);
   guideStatusShownAt = Date.now();
   updateGuideStatusScreen();

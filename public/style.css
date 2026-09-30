@@ -168,6 +168,12 @@ body {
   min-width: 0;
 }
 
+/* Boot: hide the pane skeleton until the renderer's first act adds
+   body.booted — otherwise the pre-JS HTML paints an empty pane plus
+   the border strips of the not-yet-built panes for one frame. */
+#panes-container { visibility: hidden; }
+body.booted #panes-container { visibility: visible; }
+
 #panes-container.panes-1 {
   grid-template-columns: 1fr;
   grid-template-rows: 1fr;
