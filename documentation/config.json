@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-09-16",
+  "updated": "2026-09-27",
   "baseStreamUrls": [
     "https://dlive.sx/stream/stream-",
     "https://dlstreams.st/watch/stream-",
@@ -20,6 +20,9 @@
     "cdn.jsdelivr.net",
     "assetrage.net",
     "hamis.romponalis.st",
-    "daddyliveplayer.st"
+    "daddyliveplayer.st",
+    "cdn.jwplayer.com",
+    "entitlements.jwplayer.com",
+    "www.gstatic.com"
   ]
 }
