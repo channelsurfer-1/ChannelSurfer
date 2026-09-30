@@ -1308,6 +1308,9 @@ function renderView() {
   });
 
   updateAddViewButtonVisibility();
+
+  // Pane count/layout changes resize the overlay's list too - re-pin.
+  syncAllOverlayDividers();
 }
 
 function showScheduleOverlay(pane, paneIndex, existingProgram) {
@@ -1385,6 +1388,9 @@ function showScheduleOverlay(pane, paneIndex, existingProgram) {
 
   populateScheduleList(listContainer, pane, paneIndex);
 
+  // Pin header + every row divider to the same px - see syncOverlayDividers.
+  syncOverlayDividers(overlay);
+
   listContainer.scrollTop = paneScroll[paneIndex] || 0;
   if (isDebug()) {
     logToMain('[SCHED] restore scroll pane ' + paneIndex + ': ' + listContainer.scrollTop);
@@ -1441,8 +1447,6 @@ function populateScheduleList(listContainer, pane, paneIndex) {
 
     const stationSpan = document.createElement('div');
     stationSpan.className = 'pane-schedule-station';
-    stationSpan.style.width = stationColumnWidth + '%';
-    stationSpan.style.minWidth = stationColumnWidth + '%';
     const displayName = stationName.replace(/ USA$/i, '').trim();
 
     const logoImg = document.createElement('img');
@@ -1500,19 +1504,6 @@ function populateScheduleList(listContainer, pane, paneIndex) {
     programSpan.addEventListener('mouseenter', showTooltip);
     programSpan.addEventListener('mousemove', moveTooltip);
     programSpan.addEventListener('mouseleave', hideTooltip);
-
-    // Keep the header divider pinned to the same pixel position as the row
-    // dividers. % alone can't do it: the header spans the full overlay width
-    // while the list is narrower by the scrollbar, so equal percentages
-    // land on different pixels. Same px for both = always aligned, and the
-    // header follows every drag and every repopulate.
-    const listWidthNow = listContainer.clientWidth;
-    const dividerPx = (stationColumnWidth / 100) * listWidthNow;
-    const headerStation = pane.querySelector('.pane-schedule-header-station');
-    if (headerStation) {
-      headerStation.style.width = dividerPx + 'px';
-      headerStation.style.minWidth = dividerPx + 'px';
-    }
 
     row.addEventListener('click', (e) => {
       if (isResizingColumn) return;
@@ -1888,3 +1879,35 @@ function updateAddViewButtonVisibility() {
   const btn = document.getElementById('add-view-btn');
   if (btn) btn.classList.toggle('hidden', paneCount >= 4);
 }
+
+// ---------- Schedule column-divider sync ----------
+// The header spans the full overlay width; the rows live inside the
+// scrollable list, narrower than the overlay by the vertical scrollbar.
+// Equal percentages therefore land on different pixels - the divider
+// drifts whenever the list's clientWidth changes (window resize, pane
+// layout change, scrollbar appearance/disappearance). Fix: derive BOTH
+// from one px value = stationColumnWidth% of the list's current
+// clientWidth, re-applied on every such change.
+function syncOverlayDividers(overlay) {
+  if (!overlay || !overlay.isConnected) return;
+  const listContainer = overlay.querySelector('.pane-schedule-list');
+  const headerStation = overlay.querySelector('.pane-schedule-header-station');
+  if (!listContainer || !headerStation) return;
+  const listWidth = listContainer.clientWidth;
+  if (listWidth <= 0) return;
+  const px = (stationColumnWidth / 100) * listWidth;
+  headerStation.style.width = px + 'px';
+  headerStation.style.minWidth = px + 'px';
+  overlay.querySelectorAll('.pane-schedule-station').forEach(station => {
+    station.style.width = px + 'px';
+    station.style.minWidth = px + 'px';
+  });
+}
+
+function syncAllOverlayDividers() {
+  document.querySelectorAll('.pane-schedule-overlay').forEach(syncOverlayDividers);
+}
+
+window.addEventListener('resize', () => {
+  requestAnimationFrame(syncAllOverlayDividers);
+});
