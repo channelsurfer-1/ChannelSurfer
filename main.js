@@ -348,8 +348,11 @@ function probeTiestepFrame(wcId) {
 // ---------- Curtain hide + click-shield neutralizer + audio sync ----------
 const curtainHidden = new Set();
 
-// Volume inheritance state: last volume (0-100) observed on any live player,
-// learned when the cursor hovers a pane. -1 = nothing observed yet.
+// Volume inheritance state: last non-zero volume (1-100) observed on any live
+// player, learned when the cursor hovers a pane. -1 = nothing observed yet.
+// 0 is deliberately NOT stored: players boot muted, so a 0 reading means
+// "not yet unmuted," not "user chose silence" — storing it started new
+// connects at 0%.
 let lastKnownVolumePct = -1;
 const lastVolumeReadAt = new Map();
 
@@ -365,7 +368,7 @@ function readVolumeFrom(wcId) {
   const f = findPlayerFrame(wc);
   if (!f) return;
   f.executeJavaScript('(function(){var v=document.querySelector("video");return v?Math.round(v.volume*100):-1})()', true)
-    .then((v) => { if (typeof v === 'number' && v >= 0) lastKnownVolumePct = v; })
+    .then((v) => { if (typeof v === 'number' && v > 0) lastKnownVolumePct = v; })
     .catch(() => {});
 }
 
@@ -383,7 +386,9 @@ async function resolveInitialVolumePct(wcId) {
     if (!f) continue;
     try {
       const v = await f.executeJavaScript('(function(){var v=document.querySelector("video");return v?Math.round(v.volume*100):-1})()', true);
-      if (typeof v === 'number' && v >= 0) return v;
+      // Same 0-is-unknown rule as the writer: a muted neighbour pane must
+      // not propagate silence into a fresh connect.
+      if (typeof v === 'number' && v > 0) return v;
     } catch (_) {}
   }
   return 50;
