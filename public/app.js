@@ -270,6 +270,7 @@ function closePane(index) {
     // Closing the only pane just clears it back to an empty view.
     // paneScroll is preserved so the guide reopens where the user left it.
     panePrograms[0] = null;
+    pendingFocusPane = -1;
     focusPane(0);
     renderView();
     return;
@@ -290,6 +291,14 @@ function closePane(index) {
 
   if (focusedPaneIndex > index) focusedPaneIndex--;
   else if (focusedPaneIndex === index) focusedPaneIndex = Math.min(index, paneCount - 1);
+
+  // pendingFocusPane is the same kind of live index as focusedPaneIndex and
+  // must survive the splice-and-remap the same way. A pending focus on the
+  // closed slot is dropped (the pane is gone; a future pane landing there
+  // must not inherit the request). A pending focus at a higher index shifts
+  // down one to keep pointing at its pane.
+  if (pendingFocusPane === index) pendingFocusPane = -1;
+  else if (pendingFocusPane > index) pendingFocusPane--;
 
   setContainerLayout();
   renderView();
