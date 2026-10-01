@@ -1348,12 +1348,33 @@ ipcMain.on('recovery-test-result', (event, payload) => {
       log('CONFIG', 'Recovery promotion cancelled — playback failed during soak');
     }
     if (domains.length === 1 && !knownPassengers.has(domains[0])) {
-      // Session-scoped only. A solo failed test is weak evidence — the domain
-      // may depend on a neighbour that is still unallowed — so it must not
-      // survive a restart. Persisting it is how cdn.jwplayer.com stayed
-      // invisible to the dialog through the 09-27 JW rotation.
-      knownPassengers.add(domains[0]);
-      log('CONFIG', 'Passenger (solo test failed, session-scoped): ' + domains[0]);
+      // Session-scoped only. A solo failed test is weak evidence — the
+      // domain may depend on a neighbour that is still unallowed — so it
+      // must not survive a restart (09-27 JW rotation). It must ALSO not
+      // suppress the domain for the rest of this session while other
+      // unknown candidates remain: a wrong first guess would then hide the
+      // real (combination) answer until relaunch. Record a passenger only
+      // when no other unallowed candidate is left — the solo failure is
+      // then meaningful because there is nothing left to combine with.
+      const failed = domains[0];
+      let otherUnknowns = 0;
+      for (const [domain, info] of blockedDomainRefs) {
+        if (domain === failed) continue;
+        if (Date.now() - info.lastSeenMs > 10 * 60 * 1000) continue;
+        if (knownPassengers.has(domain)) continue;
+        if (runtimeAllowedDomains.has(domain)) continue;
+        if (activeConfig.safeDomains.some(d => domain === d || domain.endsWith('.' + d))) continue;
+        const viaChainRef = chainHosts.has(info.refHost);
+        const chainContext = viaChainRef || (info.subFrame && shellHosts.has(info.refHost));
+        if (!chainContext) continue;
+        otherUnknowns++;
+      }
+      if (otherUnknowns === 0) {
+        knownPassengers.add(failed);
+        log('CONFIG', 'Passenger (solo test failed, last unknown): ' + failed);
+      } else {
+        log('CONFIG', 'Solo failure not recorded as passenger — ' + otherUnknowns + ' other unknown(s) remain: ' + failed);
+      }
     }
   }
 });
