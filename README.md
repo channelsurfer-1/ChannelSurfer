@@ -262,3 +262,14 @@ Built by vibe coding with DeepSeek and Kimi.ai (Free Editions), under the direct
 ChannelSurfer is a viewer that plays publicly available streams. The maintainers
 are not responsible for the content of those streams or for compliance with
 local laws regarding their use.
+
+ChannelSurfer does not collect, store, or transmit any personal data. It
+contains no analytics, telemetry, or crash reporting, and all configuration and
+recovery data stays local to your machine.
+
+ChannelSurfer is, however, a browser for third-party live TV sites. When you
+watch, those sites and their streaming CDNs can see your IP address and may
+attempt to track you - the app cannot prevent that. It ships with a default-deny
+blocker that blocks known ad and tracking domains, and it reads (but never
+writes) a public remote config. Functional requests such as the config and
+program-guide fetches do reveal your IP to those hosts.
