@@ -1348,11 +1348,12 @@ ipcMain.on('recovery-test-result', (event, payload) => {
       log('CONFIG', 'Recovery promotion cancelled — playback failed during soak');
     }
     if (domains.length === 1 && !knownPassengers.has(domains[0])) {
-      const additions = loadAdditions();
-      additions.passengers = Array.from(new Set([...additions.passengers, domains[0]]));
-      saveAdditions(additions);
+      // Session-scoped only. A solo failed test is weak evidence — the domain
+      // may depend on a neighbour that is still unallowed — so it must not
+      // survive a restart. Persisting it is how cdn.jwplayer.com stayed
+      // invisible to the dialog through the 09-27 JW rotation.
       knownPassengers.add(domains[0]);
-      log('CONFIG', 'Recorded passenger (solo test failed): ' + domains[0]);
+      log('CONFIG', 'Passenger (solo test failed, session-scoped): ' + domains[0]);
     }
   }
 });
@@ -1498,7 +1499,11 @@ app.whenReady().then(async () => {
   if ((additions.pending || []).length > 0) {
     log('CONFIG', 'Pending recovery addition(s) (saved on test-pass; rollback only applies during a fresh soak): ' + additions.pending.join(', '));
   }
-  knownPassengers = new Set(additions.passengers);
+  // Passengers are session-scoped by design (see recovery-test-result): a
+  // solo failed test must not poison future dialogs. Passengers left in the
+  // additions file by older builds are inert — ignored here, pruned the next
+  // time saveAdditions runs.
+  knownPassengers = new Set();
 
   for (const u of activeConfig.baseStreamUrls) {
     try { shellHosts.add(new URL(u).hostname.toLowerCase()); } catch (_) {}
@@ -1512,8 +1517,8 @@ app.whenReady().then(async () => {
   if (debug.enabled) {
     log('DEBUG', 'Debug logging enabled (CHANNELSURFER_DEBUG=1 or --debug)');
     log('CONFIG', 'baseStreamUrls: ' + activeConfig.baseStreamUrls.join(' | '));
-    if (additions.passengers.length > 0) {
-      log('DEBUG', 'Known passengers (failed recovery tests): ' + additions.passengers.join(', '));
+    if (knownPassengers.size > 0) {
+      log('DEBUG', 'Session passengers (this run only): ' + Array.from(knownPassengers).join(', '));
     }
   }
 
