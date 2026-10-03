@@ -442,6 +442,13 @@ function swapPaneSlots(a, b) {
 
   if (focusedPaneIndex === a) focusedPaneIndex = b;
   else if (focusedPaneIndex === b) focusedPaneIndex = a;
+  // pendingFocusPane is the same kind of live index as focusedPaneIndex --
+  // per the handoff rule, every index-like variable gets the same
+  // maintenance. A connect designated for slot a must land in b after the
+  // swap and vice versa; a stale value steals focus onto the wrong pane
+  // when the stream connects.
+  if (pendingFocusPane === a) pendingFocusPane = b;
+  else if (pendingFocusPane === b) pendingFocusPane = a;
 
   renderView();
   if (isDebug()) {
