@@ -44,6 +44,35 @@ function startHealthPoll() {
       if (!wc || wc.isDestroyed()) { healthTrackedWebviews.delete(id); continue; }
       const f = findPlayerFrame(wc);
       if (!f) continue;
+      // ---- Audio-focus reconcile (10-02) ----
+      // The connect-time focus sync is one-shot; a player build that
+      // re-applies its own stored state (JW does this on device changes
+      // and setup events) can clobber the element-level mute afterwards.
+      // Re-assert BOTH walls every cycle: WebContents mute from main, and
+      // the UNMODIFIED PANE_FOCUS_SYNC_SCRIPT in the player frame. The
+      // script is idempotent; user-mute-sticks holds (a focused user-muted
+      // pane has no __csSyncMuted flag and returns no-op). Drift is
+      // debug-logged as AUDIT. Safe at runtime: audioFocusByWc and
+      // PANE_FOCUS_SYNC_SCRIPT are const-declared later in this file but
+      // only evaluated here after module load completes.
+      const desired = audioFocusByWc.get(id);
+      if (desired !== undefined) {
+        const wantMuted = (desired !== true);
+        try {
+          const got = wc.isAudioMuted();
+          if (got !== wantMuted && debug.enabled) {
+            log('AUDIT', 'wall1 drift wc=' + id + ' isAudioMuted=' + got + ' want=' + (wantMuted ? 'muted' : 'audible'));
+          }
+        } catch (_) {}
+        try { wc.setAudioMuted(wantMuted); } catch (_) {}
+        f.executeJavaScript(PANE_FOCUS_SYNC_SCRIPT(desired === true), false)
+          .then((action) => {
+            if (debug.enabled && action !== 'no-op') {
+              log('AUDIT', 'wall2 drift wc=' + id + ' desired=' + (desired ? 'audible' : 'silent') + ' corrected: ' + action);
+            }
+          })
+          .catch(() => {});
+      }
       f.executeJavaScript(HEALTH_PROBE_SCRIPT, true)
         .then((res) => {
           if (!win || win.isDestroyed()) return;
