@@ -960,43 +960,86 @@ function startCursorPoll() {
 const audioFocusByWc = new Map();
 
 const PANE_FOCUS_SYNC_SCRIPT = (focused) => `
-  (function(focused) {
+(function(focused) {
     var st = document.getElementById('cs-focus-dim');
     if (!st) {
-      st = document.createElement('style');
-      st.id = 'cs-focus-dim';
-      (document.head || document.documentElement).appendChild(st);
+        st = document.createElement('style');
+        st.id = 'cs-focus-dim';
+        (document.head || document.documentElement).appendChild(st);
     }
-    st.textContent = focused
-      ? ''
-      : '.media-control .drawer-container { opacity: 0.3 !important; pointer-events: none !important; }';
+    st.textContent = focused ? '' : '.media-control .drawer-container { opacity: 0.3 !important; pointer-events: none !important; }';
+    // User-mute attribution (blip-restore): a TRUSTED user click re-reads the
+    // element state ~150ms later and records it as user intent. App injections
+    // and site-synthetic events are untrusted and never touch it; player-initiated
+    // mutes (connection-blip re-asserts, re-setup boot state) involve no gesture,
+    // so the record survives them - that is what lets the health-poll reconcile
+    // tell a user mute (keep it) from a player mute (undo it). Video-surface
+    // clicks are excluded: on the current skin they toggle play/pause, not mute,
+    // and reading state from them would record an app-set mute as user intent.
+    // window-scoped so it survives <video> element replacement; self-guarding,
+    // so a fresh document re-installs on the next poll tick.
+    if (!window.__csUserMuteTracker) {
+        window.__csUserMuteTracker = true;
+        var __csReadback = function() {
+            setTimeout(function() {
+                try {
+                    var vv = document.querySelector('video');
+                    if (!vv) return;
+                    window.__csUserMuted = !!vv.muted;
+                    if (!vv.muted && vv.volume > 0.001) window.__csLastVol = vv.volume;
+                } catch (e) {}
+            }, 150);
+        };
+        document.addEventListener('click', function(e) {
+            if (!e.isTrusted) return;
+            var vv = document.querySelector('video');
+            if (vv && vv.contains(e.target)) return;
+            __csReadback();
+        }, true);
+    }
     // Post-cutover (daddyliveplayer.st) skins may not expose the drawer
-    // icon at all — fall back to element-level mute so focus sync works
+    // icon at all - fall back to element-level mute so focus sync works
     // on every skin (09-26: no-icon forever on the new player).
     var icon = document.querySelector('.drawer-icon[data-volume]') || document.querySelector('.drawer-icon');
     var v = document.querySelector('video');
     var isMuted = (icon && icon.classList.contains('muted')) || (v && v.muted);
     if (focused) {
-      // Unmute ONLY if this script muted the pane. No flag = user mute;
-      // it sticks — the corner button chose this pane as the audio owner,
-      // but the user silenced it, and that decision is theirs.
-      if (isMuted && window.__csSyncMuted === true) {
-        window.__csSyncMuted = false;
-        if (icon) { try { icon.click(); } catch (e) {} }
-        else if (v) { v.muted = false; }
-        return 'unmuted';
-      }
-      return 'no-op';
+        if (isMuted) {
+            // The script's own mute (app set it while unfocused): undo it.
+            if (window.__csSyncMuted === true && window.__csUserMuted !== true) {
+                window.__csSyncMuted = false;
+                if (icon) { try { icon.click(); } catch (e) {} } else if (v) { v.muted = false; }
+                return 'unmuted';
+            }
+            // Muted with no app flag and no user flag: the player muted itself
+            // (blip re-assert / re-setup boot state). Pre-blip this pane was
+            // audible - restore sound, with the last user-chosen level when
+            // one was recorded.
+            if (window.__csUserMuted !== true) {
+                if (icon) { try { icon.click(); } catch (e) {} } else if (v) { v.muted = false; }
+                var lv = window.__csLastVol;
+                if (v && typeof lv === 'number' && lv > 0 && Math.abs(v.volume - lv) > 0.001) {
+                    v.volume = lv;
+                }
+                return 'restored';
+            }
+            // User mute on record: it sticks.
+            return 'no-op';
+        }
+        // Player resurrected sound over a recorded user mute: restore the mute.
+        if (window.__csUserMuted === true) {
+            if (icon) { try { icon.click(); } catch (e) {} } else if (v) { v.muted = true; }
+            return 're-muted';
+        }
+        return 'no-op';
     }
     if (!isMuted) {
-      if (icon) { try { icon.click(); } catch (e) {} }
-      else if (v) { v.muted = true; }
-      window.__csSyncMuted = true;
-      return 'muted';
+        if (icon) { try { icon.click(); } catch (e) {} } else if (v) { v.muted = true; }
+        window.__csSyncMuted = true;
+        return 'muted';
     }
     return 'no-op';
-  })(${focused})
-`;
+})(${focused}) `;
 
 ipcMain.on('set-pane-audio-focus', (event, payload) => {
   if (!payload || typeof payload.webContentsId !== 'number') return;
