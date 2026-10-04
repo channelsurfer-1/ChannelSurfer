@@ -4,7 +4,7 @@ const { app } = require('electron');
 
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
 
-const { BrowserWindow, session, ipcMain, protocol, clipboard, webContents, screen } = require('electron');
+const { BrowserWindow, session, ipcMain, protocol, clipboard, webContents, screen, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const debug = require('./src/debug');
@@ -97,6 +97,15 @@ let knownPassengers = new Set();
 const chainHosts = new Set();
 const shellHosts = new Set();
 let pendingPromotion = null;
+
+// Manual-confirm model (10-02): domains that pass a recovery test merge
+// into the ACTIVE config immediately (that is what playback uses, so the
+// connection keeps working and combinations can be tried freely) but are
+// NOT written to config-additions.json at test time. They accumulate here
+// and are written once, behind an explicit confirm dialog at quit. A
+// force-kill bypasses the dialog — the [CONFIG] "Pending quit-confirm"
+// log lines are the manual recovery path in that case.
+const sessionRecoveryPasses = new Set();
 // Pane drag-swap (09-27): when the renderer arms a drag, the cursor poll
 // streams OS cursor points to it - the host renderer is blind over
 // webview guests, so the drag cannot be tracked with document events.
@@ -1341,40 +1350,25 @@ ipcMain.on('recovery-test-result', (event, payload) => {
   const domains = payload.domains.map(d => String(d).toLowerCase()).filter(Boolean);
   if (payload.passed === true) {
     if (pendingPromotion) clearTimeout(pendingPromotion.timer);
-    // Write-on-pass: the domain is saved to the additions file and merged
-    // into the active config IMMEDIATELY — quitting right after a successful
-    // test loses nothing. The 60s soak that follows is background
-    // verification, not a gate: recovery-soak-failed rolls the domains back
-    // if playback dies inside the window, otherwise the timer clears their
-    // pending flag and they stand as permanent local additions.
-    log('CONFIG', 'Recovery test passed; saved locally immediately: ' + domains.join(', '));
-    try {
-      const additions = loadAdditions();
-      additions.safeDomains = Array.from(new Set([...additions.safeDomains, ...domains]));
-      additions.pending = Array.from(new Set([...(additions.pending || []), ...domains]));
-      saveAdditions(additions);
-      activeConfig.safeDomains = Array.from(new Set([...activeConfig.safeDomains, ...domains]));
-      log('CONFIG', 'Kept if playback holds 60s; rolled back automatically if it fails: ' + domains.join(', '));
-    } catch (err) {
-      log('ERROR', 'Failed to write config additions: ' + err.message);
-    }
+    // Manual-confirm model (10-02): a pass NO LONGER writes the additions
+    // file. The domains merge into the active config in memory (the
+    // connection keeps working) and accumulate in sessionRecoveryPasses
+    // for the quit-time confirm. The 60s soak is unchanged background
+    // verification: recovery-soak-failed rolls the in-memory merge back
+    // if playback dies inside the window. The accumulated set is logged
+    // on every pass so a force-kill (which bypasses the quit dialog) is
+    // recoverable from terminal scrollback.
+    for (const d of domains) sessionRecoveryPasses.add(d);
+    activeConfig.safeDomains = Array.from(new Set([...activeConfig.safeDomains, ...domains]));
+    log('CONFIG', 'Recovery test passed; merged in-memory, NOT saved to disk: ' + domains.join(', '));
+    log('CONFIG', 'Pending quit-confirm: ' + Array.from(sessionRecoveryPasses).join(', '));
     if (win && !win.isDestroyed()) {
       win.webContents.send('recovery-promoted', { domains });
     }
-    pendingPromotion = {
-      domains,
-      timer: setTimeout(() => {
-        pendingPromotion = null;
-        try {
-          const additions = loadAdditions();
-          additions.pending = (additions.pending || []).filter(d => !domains.includes(d));
-          saveAdditions(additions);
-          log('CONFIG', 'Verified local addition(s) after 60s stable: ' + domains.join(', '));
-        } catch (err) {
-          log('ERROR', 'Failed to verify config additions: ' + err.message);
-        }
-      }, 60000)
-    };
+    pendingPromotion = { domains, timer: setTimeout(() => {
+      pendingPromotion = null;
+      log('CONFIG', 'Soak stable after 60s (still pending quit-confirm): ' + domains.join(', '));
+    }, 60000) };
   } else {
     if (pendingPromotion) {
       clearTimeout(pendingPromotion.timer);
@@ -1413,27 +1407,24 @@ ipcMain.on('recovery-test-result', (event, payload) => {
   }
 });
 
-// Rollback counterpart to write-on-pass: the renderer reports that the
+// Rollback counterpart to the in-memory pass-merge: the renderer reports that the
 // recovered stream died inside the soak window, so the domains are removed
-// from the additions file, the merged config, and the runtime allow-set.
+// from the merged config, the runtime allow-set, and the quit-confirm set (nothing to roll back on disk).
 ipcMain.on('recovery-soak-failed', (event, payload) => {
   if (!pendingPromotion || !payload || !Array.isArray(payload.domains)) return;
   const failed = payload.domains.map(d => String(d).toLowerCase()).filter(Boolean);
   if (failed.length === 0) return;
   if (pendingPromotion.timer) clearTimeout(pendingPromotion.timer);
   pendingPromotion = null;
+  // Manual-confirm model (10-02): nothing was written to disk on pass, so
+  // the rollback is in-memory only — drop the domains from the active
+  // config, the runtime allow-set, and the quit-confirm set.
   const failedSet = new Set(failed);
   for (const d of failed) runtimeAllowedDomains.delete(d);
-  try {
-    const additions = loadAdditions();
-    additions.safeDomains = additions.safeDomains.filter(d => !failedSet.has(d));
-    additions.pending = (additions.pending || []).filter(d => !failedSet.has(d));
-    saveAdditions(additions);
-    activeConfig.safeDomains = activeConfig.safeDomains.filter(d => !failedSet.has(d));
-    log('CONFIG', 'Rolled back recovery addition(s) — playback failed during soak: ' + failed.join(', '));
-  } catch (err) {
-    log('ERROR', 'Failed to roll back config additions: ' + err.message);
-  }
+  for (const d of failed) sessionRecoveryPasses.delete(d);
+  activeConfig.safeDomains = activeConfig.safeDomains.filter(d => !failedSet.has(d));
+  log('CONFIG', 'Rolled back recovery addition(s) — playback failed during soak: ' + failed.join(', '));
+  log('CONFIG', 'Pending quit-confirm: ' + Array.from(sessionRecoveryPasses).join(', '));
 });
 
 ipcMain.on('copy-text', (event, payload) => {
@@ -1551,8 +1542,17 @@ app.whenReady().then(async () => {
   if (additions.safeDomains.length > 0) {
     activeConfig.safeDomains = Array.from(new Set([...activeConfig.safeDomains, ...additions.safeDomains]));
   }
-  if ((additions.pending || []).length > 0) {
-    log('CONFIG', 'Pending recovery addition(s) (saved on test-pass; rollback only applies during a fresh soak): ' + additions.pending.join(', '));
+    if ((additions.pending || []).length > 0) {
+    // Manual-confirm model (10-02): test-passes no longer write the
+    // additions file, so a persisted pending array has no producer. Any
+    // entries found here are residue from an older build — under the old
+    // write-on-pass the domains were saved to safeDomains at test time,
+    // so dropping the stale markers loses nothing (same policy as the
+    // pre-e9f8026 passenger residue).
+    const stalePending = additions.pending.slice();
+    additions.pending = [];
+    saveAdditions(additions);
+    log('CONFIG', 'Dropped stale pending marker(s) from an older build: ' + stalePending.join(', '));
   }
   // Passengers are session-scoped by design (see recovery-test-result): a
   // solo failed test must not poison future dialogs. Passengers left in the
@@ -1591,7 +1591,44 @@ app.whenReady().then(async () => {
   let scheduleRetryTimer = null;
   let appQuitting = false;
 
-  app.on('before-quit', () => {
+    app.on('before-quit', () => {
+    // Manual-confirm gate (10-02): if passed recovery domains accumulated
+    // this session, ask ONCE whether to write them to
+    // config-additions.json. Save = merged into the existing file (the
+    // gist is NEVER written — promoting additions there stays manual).
+    // Discard = dropped at quit. A force-kill bypasses this dialog; the
+    // [CONFIG] "Pending quit-confirm" log lines are the recovery path.
+    if (sessionRecoveryPasses.size > 0) {
+      const list = Array.from(sessionRecoveryPasses).join(', ');
+      let choice = 1;
+      try {
+        choice = dialog.showMessageBoxSync({
+          type: 'question',
+          buttons: ['Save additions', 'Discard'],
+          defaultId: 0,
+          cancelId: 1,
+          message: 'Save recovery domains to config-additions.json?',
+          detail: 'Passed and in use this session: ' + list +
+            '\n\nSave: written to config-additions.json (existing entries kept; the gist is never written).' +
+            '\nDiscard: dropped when the app quits.'
+        });
+      } catch (err) {
+        log('ERROR', 'Quit-confirm dialog failed; additions NOT saved: ' + err.message);
+        choice = 1;
+      }
+      if (choice === 0) {
+        try {
+          const additions = loadAdditions();
+          additions.safeDomains = Array.from(new Set([...additions.safeDomains, ...Array.from(sessionRecoveryPasses)]));
+          saveAdditions(additions);
+          log('CONFIG', 'Saved confirmed session addition(s): ' + list);
+        } catch (err) {
+          log('ERROR', 'Failed to save confirmed additions: ' + err.message);
+        }
+      } else {
+        log('CONFIG', 'Discarded session addition(s) at quit: ' + list);
+      }
+    }
     appQuitting = true;
     if (scheduleRetryTimer) {
       clearTimeout(scheduleRetryTimer);
