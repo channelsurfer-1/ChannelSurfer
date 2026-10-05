@@ -1,248 +1,170 @@
 # ChannelSurfer
 
-A desktop application for browsing and watching live TV streams with a rich, modern program guide.
+A desktop app for browsing and watching live TV streams, with a modern program guide. Watch one channel, or up to four at once.
 
 ## Contents
 
 - [Screenshots](#screenshots)
 - [Features](#features)
 - [Installation](#installation)
-- [Releases](#releases)
-- [How It Works](#how-it-works)
+- [Getting Started](#getting-started)
 - [Program Guide Accuracy](#program-guide-accuracy)
-- [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
-- [Build](#build)
+- [Building From Source](#building-from-source)
 - [Contributing](#contributing)
 - [License](#license)
 - [Credits](#credits)
-- [Built With](#built-with)
 - [Disclaimer](#disclaimer)
 
 ## Screenshots
 
 ### Program Guide
 
-![](./documentation/Schedule-Only.png)
+![](./documentation/Schedule-View.png)
 
-### Single View Mode
+### One Channel
 
 ![](./documentation/Single-View.png)
 
-### Dual View Mode
+### Two Channels
 
 ![](./documentation/Dual-View.png)
 
-### Three View Mode
+### Three Channels
 
 ![](./documentation/Trio-View.png)
 
-### Four View Mode
+### Four Channels
 
 ![](./documentation/Grid-View.png)
 
 ## Features
 
-### 📋 Program Guide
-
-Browse current programming across all available stations.
-
-- Click an empty panel to open the program guide
-- Click the **calendar button** on any view to browse the guide over what's playing — the stream keeps running underneath and the layout doesn't change
-- Press **Escape** (or click the highlighted current program) to return to the stream — it never stopped playing
-- The current program's row is highlighted in the guide
-- The program guide shows program titles and descriptions (on hover)
-- Drag the divider between the Channel and Program columns to resize them
-
-### 🖥️ Multi-View Watching
-
-Watch up to four channels at once.
-
-- Click the **+** button (top right) to add another view — the screen
-  rearranges itself: two views side by side, three with one large view,
-  four in a 2×2 grid. The layout is automatic; there's nothing to choose.
-- Click **×** on a view to close it. The remaining views keep playing and
-  reflow to fill the space; closing the last view returns it to the guide.
-- Drag the **move-arrow grip** in a view's top-right corner onto another
-  view to swap them — the two streams trade places instantly, no
-  reconnecting. Hold on the target for a moment to drop.
-- Only one view plays audio at a time. The speaker button in a view's
-  top-right corner selects which one: the blue speaker marks the view you
-  hear, and clicking the grey speaker in any other view moves the audio
-  there. Think of the speakers as a radio group — one choice, not a set
-  of on/off switches.
-- The speaker in the player's own control bar (bottom of the stream) is a
-  different control: it mutes or adjusts the volume of that one stream.
-  It never chooses which view you hear — that's the corner speaker's job.
-- A view that isn't playing audio has its volume controls dimmed and
-  disabled — activate the view first, then adjust.
-- Individual views expand to fullscreen when the player's fullscreen
-  button is clicked. The fullscreen view becomes the audio source;
-  leaving fullscreen restores the previous one.
-- Every live view consumes network bandwidth.
-
-### 🔊 Sound Where You Expect It
-
-- Streams start with audio already on — no "click to unmute" step.
-- Programs start at 50% volume and pick up whatever volume you last set
-  while another program was playing.
-- The player's volume bar and mute button always reflect what you're
-  actually hearing.
-
-### 🔄 Automatic Failover
-
-The stream source occasionally changes the domains and URL paths it uses to serve content. When this happens, ChannelSurfer tries a list of known player URLs in order and uses the first one that plays. Recovery is automatic — no action needed from the user. If a playing
-stream freezes, the app detects the stall and restarts that stream on its
-own.
-
-### 🛡️ Built-in Protection
-
-ChannelSurfer blocks intrusive ads, trackers, and malicious domains, and prevents pages from opening pop-up windows.
-
-### 🌙 Modern Dark Interface
-
-Designed for comfortable viewing in low-light environments.
+- **Program guide** – See what's on across all stations. Hover over a program to read its description.
+- **Multi-view** – Watch up to four channels at once. The layout adjusts automatically.
+- **Automatic recovery** – If a stream stops working or freezes, ChannelSurfer switches to a backup source or restarts the stream for you.
+- **Built-in protection** – Blocks ads, trackers, malicious domains, and pop-up windows.
+- **Dark interface** – Easy on the eyes in a dim room.
 
 ## Installation
 
-### 🍎 macOS
-1. Download `ChannelSurfer-universal.dmg` from the [latest release](../../releases/latest).
-2. Open the DMG and drag `ChannelSurfer.app` into your **Applications** folder.
-3. On first launch, macOS may warn that the app is from an unidentified developer. Right-click the app and select **Open**, then confirm.
+Download the file for your system from the [Releases page](https://github.com/channelsurfer-1/ChannelSurfer/releases/latest).
 
-### 🪟 Windows
-1. Download `ChannelSurfer-win32-x64.zip` from the [latest release](../../releases/latest).
-2. Extract the zip to a folder of your choice.
+### macOS
+
+1. Download `ChannelSurfer-universal.dmg`. (A smaller version of the app, `ChannelSurfer-intel.dmg`, also exists for Intel Macs.)
+2. Open it and drag **ChannelSurfer** into your **Applications** folder.
+3. The first time you open it, macOS may warn that the app is from an unidentified developer. Right-click the app, choose **Open**, then confirm.
+
+### Windows
+
+1. Download `ChannelSurfer-win32-x64.zip`.
+2. Extract the zip to any folder.
 3. Double-click `ChannelSurfer.exe`.
-4. On first launch, Windows SmartScreen may warn you. Click **More info** → **Run anyway**.
+4. If Windows SmartScreen warns you, click **More info**, then **Run anyway**.
 
-### 🐧 Linux
-1. Download `ChannelSurfer-linux-x64.tar.gz` from the [latest release](../../releases/latest).
-2. Extract:
+### Linux
+
+1. Download `ChannelSurfer-linux-x64.tar.gz`.
+2. Open a terminal and run:
    ```bash
    tar -xzf ChannelSurfer-linux-x64.tar.gz
    cd ChannelSurfer-linux-x64
-   ```
-3. Run:
-   ```bash
    ./ChannelSurfer
    ```
-   If the executable bit was lost during transfer, restore it with `chmod +x ChannelSurfer`.
+   If you get a permission error, run `chmod +x ChannelSurfer` from a terminal first.
 
-## Releases
+## Getting Started
 
-Pre-built binaries for macOS, Windows, and Linux are available on the
-[Releases page](https://github.com/channelsurfer-1/ChannelSurfer/releases).
+1. **Launch the app.** The program guide loads and opens automatically.
+2. **Pick a program.** Click it to start watching.
+3. **Add more views.** Click **+** (top right) to watch another channel at the same time.
+4. **Close a view.** Click **×** on it. The other views keep playing and expand to fill the space. Closing the last view takes you back to the guide.
 
-## How It Works
+### Using the program guide
 
-1. Launch the app. It loads the program guide first — a brief "Loading the
-   program guide..." message appears, then the guide opens on its own.
-   The guide also reopens by itself whenever your only view is empty; in
-   multi-view, click "Click to select a program" in an empty view to open
-   it there.
-2. Click the program you want to watch — it starts playing, with sound.
-3. Click **+** to add another view and pick a program for it. Audio moves
-   to the newest view automatically; the speaker button on any view moves
-   it back.
-4. Click the **calendar button** on a playing view to browse the guide
-   without leaving it. The stream keeps playing underneath; press
-   **Escape** to return to it, or pick any program to switch.
-5. Click **×** on a view to close it.
+- Click an empty view to open the guide there.
+- Click the **calendar button** on a playing view to browse the guide without interrupting the stream. Press **Esc** (or click the highlighted current program) to go back to it.
+- Drag the divider between the Channel and Program columns to resize them.
 
-- While a stream is playing, the player controls behave the same way as on the
-  source site — they fade out after about a second of mouse inactivity and
-  reappear as soon as you move the mouse over the video.
+### Watching multiple channels
 
-If the primary stream URL fails, the app automatically tries alternate
-sources before giving up. A brief "Connecting..."
-message appears in the view during this process.
+- **Layout:** Two views sit side by side, three views show one large and two small, and four views form a 2×2 grid.
+- **Swap views:** Drag the move icon in a view's top-right corner onto another view and hold for a moment. The two streams trade places instantly.
+- **Choosing which view you hear:** Only one view plays sound at a time. The speaker icon in a view's top-right corner shows which one. It's blue on the active view; click the grey speaker on any other view to switch to it. The newest view you add gets the sound automatically.
+- **Volume and mute:** Use the speaker in the player's control bar at the bottom of a stream. It only affects that one stream. Volume controls on a view that isn't playing sound are greyed out until you make it the active view.
+- **Fullscreen:** Click the fullscreen button on a view to expand it. That view plays sound while fullscreen, and the previous audio choice returns when you exit.
+
+**Tip:** Every open view uses internet bandwidth, so viewing four streams concurrently will require a fast connection.
+
+### Sound
+
+- Streams start with sound on. There's no "click to unmute" step.
+- New programs start at 50% volume, then use whatever level you last set.
+- The volume bar and mute button always show what you're actually hearing.
+
+### Player controls
+
+Just like on the source website, the controls fade out after about a second without mouse movement and return when you move the mouse over the video.
 
 ## Program Guide Accuracy
 
-The program guide relies on publicly available EPG data.
-
-It works well for national networks. Broadcast networks like CBS, ABC, NBC, and FOX may not always match the exact local feed used by the stream source.
-
-Treat the schedule as a helpful guide rather than an authoritative source.
-
-## Configuration
-
-ChannelSurfer loads a small remote configuration file on startup. This allows
-the maintainer to update the list of trusted domains and the list of stream
-player URLs without rebuilding or redistributing the app — fixes reach every
-install on their next launch.
-
-**How to update (maintainer):** edit the config gist, then restart the app.
-No rebuild, no re-release.
-
-**Normal users never need to touch configuration.** If channels stop playing
-across the board, the fix is usually a config update — update the app or wait
-for the shared config to refresh, then try again.
+The guide uses publicly available program schedule data. It works well for national networks, but local broadcast stations (CBS, ABC, NBC, FOX) may not match the exact feed the stream uses. Treat the schedule as a helpful guide, not a guarantee.
 
 ## Troubleshooting
 
 ### A channel won't play
 
-1. **Try a different channel.** If others work, it's that one stream — try again later.
-2. **Look at the message in the panel.** "Could not connect to server." means every stream source failed to respond — usually your network connection, or the *source site* refusing connections (regional or IP-based). If other channels work, it's that one stream; try again later.
-3. **Restart the app.** The shared config updates at launch; a fix may already be live.
+1. **Try another channel.** If others work, the problem is with that one stream. Try again later.
+2. **Read the message in the view.** "Could not connect to server" means every stream source failed to respond. That usually points to your internet connection, or to the source site blocking connections from your region or network.
+3. **Restart the app.** ChannelSurfer checks for fixes each time it starts.
 
-### The guide says "Unable to load program guide..."
+### "Unable to load program guide..."
 
-The app could not reach the EPG source to build the program guide. This is
-almost always a network problem on your side, or the source being temporarily
-down. The app keeps retrying on its own — the guide appears as soon as a
-connection succeeds, no restart needed. Keep in mind that streams need
-network too, so if the guide can't load, channels won't play either.
+The app couldn't reach the schedule data, usually because of your internet connection or a temporary outage. It keeps retrying automatically, and the guide appears as soon as it connects. You don't need to restart. Streams need a connection too, so channels won't play until this is resolved.
 
-### Getting detailed logs (debug mode)
+### Automatic updates to stream sources
 
-If a problem keeps happening — and you're reporting it — run with debug logging
-and attach the log:
+Stream sources change without notice from time to time. To keep up, ChannelSurfer downloads a small settings file each time it starts, listing which stream addresses and domains to use. This lets fixes reach everyone without a new download. If every channel stops working, restart the app, or download the latest release.
+
+### Reporting a problem (debug mode)
+
+If you're [opening an issue](https://github.com/channelsurfer-1/ChannelSurfer/issues), a debug log helps a lot. Run the app from the project folder like this:
 
 ```bash
 CHANNELSURFER_DEBUG=1 npm start
 ```
 
-Debug mode adds detailed instrumentation (every network request, response
-statuses, page navigations, per-candidate timing). Normal runs are unaffected.
+Debug mode records detailed information about network activity and stream loading. Normal use isn't affected.
 
-### The recovery dialog
+<details>
+<summary>Advanced: the recovery dialog (debug mode only)</summary>
 
-When every stream source fails, the app normally shows "Could not connect to
-server." In a debug run, a recovery dialog may appear instead, listing domains
-that were blocked while the player loaded:
+If every stream source fails while debugging, a recovery dialog may list domains that were blocked while the player loaded. Each one is labeled:
 
-- `chain` — strong evidence this domain is part of the player; pre-selected.
-- `chain?` — possibly part of the player; your call.
-- `likely ad` — almost certainly an ad; left unselected.
+- **chain** – Very likely needed by the player. Pre-selected.
+- **chain?** – Possibly needed. Your call.
+- **likely ad** – Almost certainly an ad. Not selected.
 
-Click **Test selected** to try the checked set. If playback recovers, the
-domains are saved on your machine immediately — no waiting — and you're shown
-a short snippet to share with the maintainer. The app then watches the stream
-for 60 seconds: if playback fails inside that window, the domains are removed
-again automatically. Once a domain reaches the shared config (the gist),
-your local copy of it is cleaned up on the next launch. Failed guesses are
-remembered and won't be repeated. The app never changes the shared
-configuration by itself.
+Click **Test selected** to try the checked domains. If playback recovers, you will be offered the option to save the checked domains locally and you'll see a short snippet to send to the maintainer. The app then watches the stream for 60 seconds, and if playback fails within that time, the domains will be removed again. Domains that fail are remembered and not tried again. Once a domain is added to the shared settings, your local copy is cleaned up the next time you launch. The app never changes the shared settings itself.
 
-## Build
+</details>
+
+## Building From Source
 
 ```bash
-npm install             # first run only
+npm install             # first time only
 npm run package         # macOS (.dmg)
 npm run package:win     # Windows (.zip)
 npm run package:linux   # Linux (.tar.gz)
-npm run package:all     # all platforms, in order
+npm run package:all     # all platforms
 ```
 
-Output goes to `dist/` (not part of the repository; attach the artifacts to a
-GitHub Release to distribute them).
+Finished builds appear in the `dist/` folder, which isn't part of the repository. To share them, attach the files to a GitHub Release.
 
 ## Contributing
 
-Bug reports and feature requests are welcome — please [open an issue](https://github.com/channelsurfer-1/ChannelSurfer/issues).
+Bug reports and feature requests are welcome. Please [open an issue](https://github.com/channelsurfer-1/ChannelSurfer/issues).
 
 ## License
 
@@ -250,26 +172,14 @@ GPL-3.0. See [LICENSE](LICENSE) for details.
 
 ## Credits
 
-Built by vibe coding with DeepSeek and Kimi.ai (Free Editions), under the direction of Joel Budgor.
+Vibe coded collectively by Z.ai, Kimi.ai and DeepSeek (free editions).
 
-## Built With
-
-- [Electron](https://electronjs.org/) — cross-platform desktop framework
-- [@electron/packager](https://github.com/electron/packager) — packaging and distribution
+Made with [Electron](https://electronjs.org/) and [@electron/packager](https://github.com/electron/packager).
 
 ## Disclaimer
 
-ChannelSurfer is a viewer that plays publicly available streams. The maintainers
-are not responsible for the content of those streams or for compliance with
-local laws regarding their use.
+ChannelSurfer is a viewer for publicly available streams. The maintainers aren't responsible for the content of those streams or for whether using them complies with the laws where you live.
 
-ChannelSurfer does not collect, store, or transmit any personal data. It
-contains no analytics, telemetry, or crash reporting, and all configuration and
-recovery data stays local to your machine.
+ChannelSurfer doesn't collect, store, or send any personal data. No analytics, no telemetry, no crash reporting - and your config and recovery data stay on your machine.
 
-ChannelSurfer is, however, a browser for third-party live TV sites. When you
-watch, those sites and their streaming CDNs can see your IP address and may
-attempt to track you - the app cannot prevent that. It ships with a default-deny
-blocker that blocks known ad and tracking domains, and it reads (but never
-writes) a public remote config. Functional requests such as the config and
-program-guide fetches do reveal your IP to those hosts.
+That said, ChannelSurfer is a browser for third-party live TV sites. When you watch, those sites and their streaming CDNs can see your IP address and may try to track you - the app can't stop that. It ships with a default-deny blocker for known ad and tracking domains, and it reads (but never writes) a public remote config. Functional requests like the config and program-guide fetches do reveal your IP to those hosts.
