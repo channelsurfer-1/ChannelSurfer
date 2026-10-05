@@ -52,7 +52,7 @@ Download the file for your system from the [Releases page](https://github.com/ch
 
 ### macOS
 
-1. Download `ChannelSurfer-universal.dmg`. (A smaller version of the app, `ChannelSurfer-intel.dmg`, also exists for Intel Macs.)
+1. Download `ChannelSurfer-universal.dmg`. (A smaller version of the app, `ChannelSurfer-intel.dmg`, is also available for Intel Macs.)
 2. Open it and drag **ChannelSurfer** into your **Applications** folder.
 3. The first time you open it, macOS may warn that the app is from an unidentified developer. Right-click the app, choose **Open**, then confirm.
 
