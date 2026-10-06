@@ -1595,6 +1595,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const pane = openOverlay.parentElement;
     const idx = paneIndexOf(pane);
     if (idx === -1) return;
+    hideTooltip();
     openOverlay.remove();
     paneOverlayOpen[idx] = false;
     applyAudioState();
