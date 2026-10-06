@@ -22,6 +22,11 @@ let suppressNextRowClick = false;
 let panePrograms = [null];
 let paneOverlayOpen = [false];
 let paneScroll = [0];
+// Per-pane guide filter (10-05): the raw query string. Read at render time
+// by populateScheduleList, so reopen, the 60s refresh, and schedule rollover
+// all re-derive matches from current data. Restored with the input visibly
+// populated; travels with the pane on drag-swap like every index-mapped state.
+let paneFilter = [''];
 
 const BASE_STREAM_URL_FALLBACK = 'https://dlive.sx/stream/stream-';
 const STREAM_ATTEMPT_TIMEOUT_MS = 7000;
@@ -1150,6 +1155,12 @@ function moveTooltip(e) {
     top = e.clientY - tooltipHeight - 12;
   }
 
+  // Rev 6 (10-05): the above/left flips had no guard on the far edge, so a
+  // tooltip taller/wider than ~half the viewport could land with negative
+  // top/left and get clipped. Clamp inside the window.
+  if (top < 10) top = 10;
+  if (left < 10) left = 10;
+
   tooltip.style.left = left + 'px';
   tooltip.style.top = top + 'px';
 }
@@ -1393,6 +1404,7 @@ function showScheduleOverlay(pane, paneIndex, existingProgram) {
   programHeader.className = 'pane-schedule-header-program';
   programHeader.textContent = 'Program';
   header.appendChild(programHeader);
+  programHeader.appendChild(buildScheduleFilter(pane, overlay, paneIndex));
 
   overlay.appendChild(header);
 
@@ -1418,160 +1430,221 @@ function showScheduleOverlay(pane, paneIndex, existingProgram) {
   applyAudioState();
 }
 
-function populateScheduleList(listContainer, pane, paneIndex) {
-  if (!scheduleData || !scheduleData.stations) {
-    const msgRow = document.createElement('div');
-    msgRow.className = 'pane-schedule-row';
-    msgRow.style.cssText = 'color:#999;font-size:13px;padding:14px 12px;';
+// ---------- Guide filter (10-05, rev 2) ----------
+// One input per guide, embedded at the right end of the Program header
+// cell. The query lives in paneFilter[idx]; the list re-renders from
+// populateScheduleList, which is the single place that applies the filter —
+// so the 60s refresh and any reopen re-apply it with zero extra machinery.
+// Pane index is re-derived at event time (slot remaps must not strand a
+// stale index).
+function buildScheduleFilter(pane, overlay, paneIndex) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'pane-schedule-filter';
+    input.placeholder = 'Filter by station or program…';
+    input.spellcheck = false;
+    input.value = paneFilter[paneIndex] || '';
 
-    const unavailableMs = guideUnavailableSince ? Date.now() - guideUnavailableSince : 0;
-    if (unavailableMs >= GUIDE_ERROR_THRESHOLD_MS) {
-      msgRow.textContent = "Can't load program guide.";
-    } else {
-      const labelSpan = document.createElement('span');
-      labelSpan.textContent = 'Loading the program guide';
-      labelSpan.appendChild(makeConnectingDots());
-      msgRow.appendChild(labelSpan);
-
-      const remaining = GUIDE_ERROR_THRESHOLD_MS - unavailableMs;
-      if (remaining > 0) {
-        setTimeout(() => {
-          if (msgRow.isConnected && !scheduleData) {
-            msgRow.textContent = "Can't load program guide.";
-          }
-        }, remaining);
-      }
-    }
-
-    listContainer.appendChild(msgRow);
-    return;
-  }
-
-  const nowMs = Date.now();
-  const stationsEntries = Object.entries(scheduleData.stations);
-  stationsEntries.sort((a, b) => a[0].localeCompare(b[0]));
-
-  stationsEntries.forEach(([stationName, stationObj]) => {
-    const row = document.createElement('div');
-    row.className = 'pane-schedule-row';
-    // Mark the row that is THIS pane's current program — the
-    // "back to what I was watching" row. Stations playing in other panes
-    // are not marked; the highlight is pane-scoped.
-    if (panePrograms[paneIndex] && panePrograms[paneIndex].dlhdId === stationObj.dlhdId) {
-      row.classList.add('is-current');
-    }
-
-    const stationSpan = document.createElement('div');
-    stationSpan.className = 'pane-schedule-station';
-    const displayName = stationName.replace(/ USA$/i, '').trim();
-
-    const logoImg = document.createElement('img');
-    logoImg.className = 'pane-schedule-logo';
-    const logoFileName = stationName.replace(/ USA$/i, '').trim();
-    logoImg.src = `../images/logos/badges/${encodeURIComponent(logoFileName)}.png`;
-    logoImg.alt = displayName;
-    logoImg.onerror = function() {
-      this.style.display = 'none';
+    const applyFilter = () => {
+        const idx = paneIndexOf(pane);
+        if (idx === -1 || idx >= paneCount) return;
+        paneFilter[idx] = input.value;
+        const list = overlay.querySelector('.pane-schedule-list');
+        if (!list) return;
+        list.innerHTML = '';
+        populateScheduleList(list, pane, idx);
+        list.scrollTop = 0; // reshaped list — scroll restore is meaningless
     };
 
-    stationSpan.appendChild(logoImg);
-
-    const stationText = document.createElement('span');
-    stationText.className = 'pane-schedule-station-text';
-    stationText.textContent = displayName;
-
-    stationSpan.appendChild(stationText);
-
-    row.appendChild(stationSpan);
-
-    const stationResizer = document.createElement('div');
-    stationResizer.className = 'pane-schedule-station-resizer';
-    row.appendChild(stationResizer);
-
-    const programSpan = document.createElement('div');
-    programSpan.className = 'pane-schedule-program';
-
-    const slots = stationObj.slots || [];
-    const currentSlot = slots.find(s => nowMs >= s.startMs && nowMs < s.stopMs);
-
-    let programTitle = '';
-    let programDescription = 'No description available';
-
-    if (currentSlot) {
-      const textarea = document.createElement('textarea');
-      textarea.innerHTML = currentSlot.program;
-      programTitle = textarea.value;
-      programSpan.textContent = programTitle;
-      programSpan.classList.add('is-live');
-
-      if (currentSlot.description) {
-        const descTextarea = document.createElement('textarea');
-        descTextarea.innerHTML = currentSlot.description;
-        programDescription = descTextarea.value;
-      }
-    } else {
-      programSpan.textContent = 'No program data';
-    }
-
-    row.appendChild(programSpan);
-
-    programSpan.dataset.tooltipTitle = programTitle;
-    programSpan.dataset.tooltipDesc = programDescription;
-    programSpan.addEventListener('mouseenter', showTooltip);
-    programSpan.addEventListener('mousemove', moveTooltip);
-    programSpan.addEventListener('mouseleave', hideTooltip);
-
-    row.addEventListener('click', (e) => {
-      if (isResizingColumn) return;
-
-      e.stopPropagation();
-
-      hideTooltip();
-
-      const currentList = pane.querySelector('.pane-schedule-list');
-      if (currentList) {
-        if (isDebug()) {
-          logToMain('[SCHED] save scroll pane ' + paneIndex + ' (row-click): ' + currentList.scrollTop);
+    input.addEventListener('input', (evt) => {
+        // Balloon reset (rev 5, 10-05): filtering can remove the hovered row
+        // without the browser ever firing mouseleave, so the balloon's only
+        // dismissal path never runs. Synthesize it. No-op when nothing is
+        // hovered; balloon stays gone until the next real mouse move.
+        const hoverChain = document.querySelectorAll(':hover');
+        const hovered = hoverChain[hoverChain.length - 1];
+        if (hovered) {
+            for (const type of ['mouseleave', 'mouseout', 'pointerleave', 'pointerout']) {
+                hovered.dispatchEvent(new MouseEvent(type, { bubbles: true }));
+            }
         }
-        paneScroll[paneIndex] = currentList.scrollTop;
-      }
-
-      // Re-picking the program already playing in this pane = "back to
-      // what I was watching": just dismiss the guide; the stream never
-      // stops. Any other row replaces the stream as usual. Health check
-      // required: same channel, no failover in flight, live webview
-      // actually showing it — otherwise a click re-streams.
-      const currentProgram = panePrograms[paneIndex];
-      const wv = pane.querySelector('webview');
-      const alreadyPlaying = currentProgram &&
-        currentProgram.dlhdId === stationObj.dlhdId &&
-        !streamAttempts.has(pane) &&
-        wv && !wv.dataset.dead && wv.dataset.channelId === String(stationObj.dlhdId);
-      if (alreadyPlaying) {
-        const overlay = pane.querySelector('.pane-schedule-overlay');
-        if (overlay) overlay.remove();
-        paneOverlayOpen[paneIndex] = false;
-        applyAudioState();
-        return;
-      }
-
-      panePrograms[paneIndex] = {
-        stationName: displayName,
-        dlhdId: stationObj.dlhdId,
-        programName: programTitle
-      };
-
-      paneOverlayOpen[paneIndex] = false;
-
-      scheduleProgramTimer(stationObj.dlhdId);
-
-      pendingFocusPane = paneIndex;
-
-      attemptStream(pane, paneIndex, displayName, stationObj.dlhdId, programTitle);
+        applyFilter(evt);
     });
 
-    listContainer.appendChild(row);
-  });
+    // Escape ladder unchanged: text present -> clear it, keep the guide
+    // open, swallow the key. Empty -> bubble; the document handler closes
+    // the guide. All other keys swallowed so host shortcuts can't fire.
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            if (input.value.trim() !== '') {
+                e.stopPropagation();
+                input.value = '';
+                applyFilter();
+            }
+        } else {
+            e.stopPropagation();
+        }
+    });
+
+    // Right-edge placement (10-05, rev 4): anchor to the column's BORDER
+    // edge, not its content edge. Rev 3 subtracted the cell's padding,
+    // which left that padding visible as a permanent gap. With no ×
+    // (single-pane), cancel the padding with an equal negative margin —
+    // truly flush. With a ×, stop 6px short of it, as before.
+    requestAnimationFrame(() => {
+        const cell = overlay.querySelector('.pane-schedule-header-program');
+        if (!cell) return;
+        const pad = parseFloat(getComputedStyle(cell).paddingRight) || 0;
+        const closeBtn = pane.querySelector('.pane-close');   // ← REAL × class here
+        if (closeBtn) {
+            const cellRight = cell.getBoundingClientRect().right - pad;
+            const closeLeft = closeBtn.getBoundingClientRect().left;
+            input.style.marginRight = Math.max(0, cellRight - closeLeft + 6) + 'px';
+        } else {
+            input.style.marginRight = (6 - pad) + 'px';   // 6px in from border ≈ scrollbar edge
+        }
+    });
+
+    return input;
+}
+
+function populateScheduleList(listContainer, pane, paneIndex) {
+    if (!scheduleData || !scheduleData.stations) {
+        const msgRow = document.createElement('div');
+        msgRow.className = 'pane-schedule-row';
+        msgRow.style.cssText = 'color:#999;font-size:13px;padding:14px 12px;';
+        const unavailableMs = guideUnavailableSince ? Date.now() - guideUnavailableSince : 0;
+        if (unavailableMs >= GUIDE_ERROR_THRESHOLD_MS) {
+            msgRow.textContent = "Can't load program guide.";
+        } else {
+            const labelSpan = document.createElement('span');
+            labelSpan.textContent = 'Loading the program guide';
+            labelSpan.appendChild(makeConnectingDots());
+            msgRow.appendChild(labelSpan);
+            const remaining = GUIDE_ERROR_THRESHOLD_MS - unavailableMs;
+            if (remaining > 0) {
+                setTimeout(() => {
+                    if (msgRow.isConnected && !scheduleData) {
+                        msgRow.textContent = "Can't load program guide.";
+                    }
+                }, remaining);
+            }
+        }
+        listContainer.appendChild(msgRow);
+        return;
+    }
+    const nowMs = Date.now();
+    // Filter (10-05): case-insensitive literal substring against the station
+    // display name OR the current program title. Empty = no filter. The
+    // stored query is re-applied on every render (refresh/reopen/rollover).
+    const rawNeedle = (paneFilter[paneIndex] || '').trim();
+    const needle = rawNeedle.toLowerCase();
+    const stationsEntries = Object.entries(scheduleData.stations);
+    stationsEntries.sort((a, b) => a[0].localeCompare(b[0]));
+    stationsEntries.forEach(([stationName, stationObj]) => {
+        const displayName = stationName.replace(/ USA$/i, '').trim();
+        // Program title/description are needed for the filter test, so they
+        // are computed before any row DOM is built (was mid-build; hoisted).
+        const slots = stationObj.slots || [];
+        const currentSlot = slots.find(s => nowMs >= s.startMs && nowMs < s.stopMs);
+        let programTitle = '';
+        let programDescription = 'No description available';
+        if (currentSlot) {
+            const textarea = document.createElement('textarea');
+            textarea.innerHTML = currentSlot.program;
+            programTitle = textarea.value;
+            if (currentSlot.description) {
+                const descTextarea = document.createElement('textarea');
+                descTextarea.innerHTML = currentSlot.description;
+                programDescription = descTextarea.value;
+            }
+        }
+        if (needle) {
+            const matches = displayName.toLowerCase().includes(needle)
+                || programTitle.toLowerCase().includes(needle);
+            if (!matches) return;
+        }
+        const row = document.createElement('div');
+        row.className = 'pane-schedule-row';
+        // Mark the row that is THIS pane's current program — the
+        // "back to what I was watching" row. Stations playing in other panes
+        // are not marked; the highlight is pane-scoped.
+        if (panePrograms[paneIndex] && panePrograms[paneIndex].dlhdId === stationObj.dlhdId) {
+            row.classList.add('is-current');
+        }
+        const stationSpan = document.createElement('div');
+        stationSpan.className = 'pane-schedule-station';
+        const logoImg = document.createElement('img');
+        logoImg.className = 'pane-schedule-logo';
+        const logoFileName = stationName.replace(/ USA$/i, '').trim();
+        logoImg.src = `../images/logos/badges/${encodeURIComponent(logoFileName)}.png`;
+        logoImg.alt = displayName;
+        logoImg.onerror = function() { this.style.display = 'none'; };
+        stationSpan.appendChild(logoImg);
+        const stationText = document.createElement('span');
+        stationText.className = 'pane-schedule-station-text';
+        stationText.textContent = displayName;
+        stationSpan.appendChild(stationText);
+        row.appendChild(stationSpan);
+        const stationResizer = document.createElement('div');
+        stationResizer.className = 'pane-schedule-station-resizer';
+        row.appendChild(stationResizer);
+        const programSpan = document.createElement('div');
+        programSpan.className = 'pane-schedule-program';
+        if (currentSlot) {
+            programSpan.textContent = programTitle;
+            programSpan.classList.add('is-live');
+        } else {
+            programSpan.textContent = 'No program data';
+        }
+        row.appendChild(programSpan);
+        programSpan.dataset.tooltipTitle = programTitle;
+        programSpan.dataset.tooltipDesc = programDescription;
+        programSpan.addEventListener('mouseenter', showTooltip);
+        programSpan.addEventListener('mousemove', moveTooltip);
+        programSpan.addEventListener('mouseleave', hideTooltip);
+        row.addEventListener('click', (e) => {
+            if (isResizingColumn) return;
+            e.stopPropagation();
+            hideTooltip();
+            const currentList = pane.querySelector('.pane-schedule-list');
+            if (currentList) {
+                if (isDebug()) {
+                    logToMain('[SCHED] save scroll pane ' + paneIndex + ' (row-click): ' + currentList.scrollTop);
+                }
+                paneScroll[paneIndex] = currentList.scrollTop;
+            }
+            // Re-picking the program already playing in this pane = "back to
+            // what I was watching": just dismiss the guide; the stream never
+            // stops. Any other row replaces the stream as usual. Health check
+            // required: same channel, no failover in flight, live webview
+            // actually showing it — otherwise a click re-streams.
+            const currentProgram = panePrograms[paneIndex];
+            const wv = pane.querySelector('webview');
+            const alreadyPlaying = currentProgram && currentProgram.dlhdId === stationObj.dlhdId && !streamAttempts.has(pane) && wv && !wv.dataset.dead && wv.dataset.channelId === String(stationObj.dlhdId);
+            if (alreadyPlaying) {
+                const overlay = pane.querySelector('.pane-schedule-overlay');
+                if (overlay) overlay.remove();
+                paneOverlayOpen[paneIndex] = false;
+                applyAudioState();
+                return;
+            }
+            panePrograms[paneIndex] = { stationName: displayName, dlhdId: stationObj.dlhdId, programName: programTitle };
+            paneOverlayOpen[paneIndex] = false;
+            scheduleProgramTimer(stationObj.dlhdId);
+            pendingFocusPane = paneIndex;
+            attemptStream(pane, paneIndex, displayName, stationObj.dlhdId, programTitle);
+        });
+        listContainer.appendChild(row);
+    });
+    // Zero matches: never a blank guide. textContent only — the needle is
+    // echoed unescaped-safe.
+    if (needle && listContainer.children.length === 0) {
+        const emptyRow = document.createElement('div');
+        emptyRow.className = 'pane-schedule-empty';
+        emptyRow.textContent = 'No matches for "' + rawNeedle + '"';
+        listContainer.appendChild(emptyRow);
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {

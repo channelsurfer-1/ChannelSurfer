@@ -601,3 +601,32 @@ webview {
   height: 100%;
   border: none;
 }
+
+/* ============================================= GUIDE FILTER (10-05, rev 2) ============================================= */
+/* Lives at the right end of the Program header cell. Grows with the
+   program column (bounded) and shrinks under pressure (floor 90px).
+   margin-right reserves room for the × close button — the one pane control
+   that stays visible over an open guide (top-right, z-60). */
+.pane-schedule-filter {
+    flex: 1 1 180px;
+    min-width: 90px;
+    max-width: 300px;
+    height: 26px;
+    margin-left: auto;
+    margin-right: 40px;
+    padding: 0 10px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    background-color: var(--bg-main);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    outline: none;
+}
+.pane-schedule-filter:focus { border-color: var(--accent); }
+.pane-schedule-filter::placeholder { color: var(--text-muted); }
+.pane-schedule-empty {
+    padding: 14px 12px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
