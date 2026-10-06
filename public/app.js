@@ -1644,7 +1644,15 @@ function populateScheduleList(listContainer, pane, paneIndex) {
         emptyRow.className = 'pane-schedule-empty';
         emptyRow.textContent = 'No matches for "' + rawNeedle + '"';
         listContainer.appendChild(emptyRow);
-    }
+    }    
+    // Rev 7 (10-05): rebuilt rows take CSS-default widths from the list's
+    // CURRENT geometry, but the header keeps the divider widths the last
+    // sync pinned (init-time). Any scrollbar change since — filtering is
+    // the visible case; the 60s refresh and reopen can do it too — leaves
+    // header and rows on different geometries. Re-derive both after every
+    // rebuild. (Init's own sync at the call site is idempotent; harmless.)
+    const overlay = listContainer.closest('.pane-schedule-overlay');
+    if (overlay) syncOverlayDividers(overlay);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
