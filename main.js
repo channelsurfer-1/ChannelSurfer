@@ -1005,23 +1005,32 @@ const PANE_FOCUS_SYNC_SCRIPT = (focused) => `
     // window-scoped so it survives <video> element replacement; self-guarding,
     // so a fresh document re-installs on the next poll tick.
     if (!window.__csUserMuteTracker) {
-        window.__csUserMuteTracker = true;
-        var __csReadback = function() {
-            setTimeout(function() {
-                try {
-                    var vv = document.querySelector('video');
-                    if (!vv) return;
-                    window.__csUserMuted = !!vv.muted;
-                    if (!vv.muted && vv.volume > 0.001) window.__csLastVol = vv.volume;
-                } catch (e) {}
-            }, 150);
-        };
-        document.addEventListener('click', function(e) {
-            if (!e.isTrusted) return;
+      window.__csUserMuteTracker = true;
+      var __csReadback = function() {
+        setTimeout(function() {
+          try {
             var vv = document.querySelector('video');
-            if (vv && vv.contains(e.target)) return;
-            __csReadback();
-        }, true);
+            if (!vv) return;
+            // App-owned mute must not be recorded as user intent: while
+            // __csSyncMuted is set, the element mute is OURS (unfocused
+            // pane). A trusted control-bar click here — the fullscreen
+            // button is the classic case — would otherwise capture the
+            // app's mute as a user choice, and the focus system would
+            // honor that record forever: fullscreen enters silent and
+            // every health-poll reconcile no-ops. Record only when the
+            // mute is not app-set.
+            if (window.__csSyncMuted === true) return;
+            window.__csUserMuted = !!vv.muted;
+            if (!vv.muted && vv.volume > 0.001) window.__csLastVol = vv.volume;
+          } catch (e) {}
+        }, 150);
+      };
+      document.addEventListener('click', function(e) {
+        if (!e.isTrusted) return;
+        var vv = document.querySelector('video');
+        if (vv && vv.contains(e.target)) return;
+        __csReadback();
+      }, true);
     }
     // Post-cutover (daddyliveplayer.st) skins may not expose the drawer
     // icon at all - fall back to element-level mute so focus sync works
