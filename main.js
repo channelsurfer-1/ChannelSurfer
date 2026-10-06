@@ -519,6 +519,19 @@ function hideUnmuteCurtain(wcId) {
         // <video> element as well, re-try shortly after (setup may
         // re-assert mute), and keep an observer to defeat later re-mutes.
         function csFindPlayer() {
+          // JW embed API (09-27 cutover): the global is the jwplayer FUNCTION and the
+          // instance is jwplayer('player') - the name-scan below can never find it. That
+          // is why this skin logged player=NOT FOUND while the kick (which calls
+          // jwplayer('player') directly) worked. Try the API first; the scans below
+          // remain the fallback for other skins.
+          try {
+            if (typeof jwplayer === 'function') {
+              const p = jwplayer('player');
+              if (p && typeof p.setVolume === 'function' && typeof p.setMute === 'function') {
+                return p;
+              }
+            }
+          } catch (e) {}
           const names = ['player', 'clapprPlayer', 'thePlayer', 'p2pPlayer', 'hlsPlayer', 'clappr'];
           for (let i = 0; i < names.length; i++) {
             try {
@@ -587,8 +600,21 @@ function hideUnmuteCurtain(wcId) {
         // forcing is backstop only. No MutationObserver: deliberate user
         // mutes must stick; startup retries cover setup-time re-mutes.
         var csVolClappr = -1;
+        var csApiSeen = false;
         function csApplyAudio() {
           csClickMuteButton();
+          // Player-API drive: setMute(false) + setVolume(volPct) update the player's
+          // internal model - the thing its own control-bar icon renders. Element
+          // writes alone left the model muted, which showed as audible audio under a
+          // muted icon. Re-resolve per attempt: setup can complete after injection,
+          // so the csPlayer snapshot may be a stale negative. Programmatic API calls
+          // are not clicks, so the user-mute tracker never records them.
+          var api = csPlayer || csFindPlayer();
+          if (api) {
+            csApiSeen = true;
+            try { if (typeof api.setMute === 'function') api.setMute(false); } catch (e) {}
+            try { if (typeof api.setVolume === 'function') api.setVolume(volPct); } catch (e) {}
+          }
           // Clappr's VOLUME bar computes volume from POINTER coordinates and
           // is hidden at injection time. NB: '.media-control .bar-container'
           // matches the SEEK bar first — the volume bar lives in the drawer.
@@ -670,7 +696,7 @@ function hideUnmuteCurtain(wcId) {
         })();
         var csV = document.querySelector('video');
         return {
-          found: !!csPlayer,
+          found: csApiSeen,
           clicked: csClicked,
           volClappr: csVolClappr,
           volAfter: csV ? Math.round(csV.volume * 100) : -1
@@ -1002,6 +1028,22 @@ const PANE_FOCUS_SYNC_SCRIPT = (focused) => `
     // on every skin (09-26: no-icon forever on the new player).
     var icon = document.querySelector('.drawer-icon[data-volume]') || document.querySelector('.drawer-icon');
     var v = document.querySelector('video');
+    // JW embed API: the instance is jwplayer('player'); the element-level
+    // fallbacks below leave its internal mute model untouched, and the model
+    // is what the control-bar icon renders (audible audio under a muted
+    // icon). Audible-direction branches drive setMute/setVolume alongside
+    // the element writes; mute direction is unchanged. Programmatic API
+    // calls are not trusted clicks, so the user-mute tracker never records
+    // them (user mutes still stick).
+    var csApi = null;
+    try {
+      if (typeof jwplayer === 'function') {
+        var jw = jwplayer('player');
+        if (jw && typeof jw.setMute === 'function') {
+          csApi = jw;
+        }
+      }
+    } catch (e) {}
     var isMuted = (icon && icon.classList.contains('muted')) || (v && v.muted);
     if (focused) {
         if (isMuted) {
@@ -1009,6 +1051,7 @@ const PANE_FOCUS_SYNC_SCRIPT = (focused) => `
             if (window.__csSyncMuted === true && window.__csUserMuted !== true) {
                 window.__csSyncMuted = false;
                 if (icon) { try { icon.click(); } catch (e) {} } else if (v) { v.muted = false; }
+                if (csApi) { try { csApi.setMute(false); } catch (e) {} }
                 return 'unmuted';
             }
             // Muted with no app flag and no user flag: the player muted itself
@@ -1021,6 +1064,7 @@ const PANE_FOCUS_SYNC_SCRIPT = (focused) => `
                 if (v && typeof lv === 'number' && lv > 0 && Math.abs(v.volume - lv) > 0.001) {
                     v.volume = lv;
                 }
+                if (csApi) { try { csApi.setMute(false); if (typeof lv === 'number' && lv > 0) { csApi.setVolume(Math.round(lv * 100)); } } catch (e) {} }
                 return 'restored';
             }
             // User mute on record: it sticks.
