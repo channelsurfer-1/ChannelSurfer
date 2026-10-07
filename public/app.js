@@ -1492,17 +1492,19 @@ function buildScheduleFilter(pane, overlay, paneIndex) {
     // (single-pane), cancel the padding with an equal negative margin —
     // truly flush. With a ×, stop 6px short of it, as before.
     requestAnimationFrame(() => {
-        const cell = overlay.querySelector('.pane-schedule-header-program');
-        if (!cell) return;
-        const pad = parseFloat(getComputedStyle(cell).paddingRight) || 0;
-        const closeBtn = pane.querySelector('.pane-close');   // ← REAL × class here
-        if (closeBtn) {
-            const cellRight = cell.getBoundingClientRect().right - pad;
-            const closeLeft = closeBtn.getBoundingClientRect().left;
-            input.style.marginRight = Math.max(0, cellRight - closeLeft + 6) + 'px';
-        } else {
-            input.style.marginRight = (6 - pad) + 'px';   // 6px in from border ≈ scrollbar edge
-        }
+      const cell = overlay.querySelector('.pane-schedule-header-program');
+      if (!cell) return;
+      const pad = parseFloat(getComputedStyle(cell).paddingRight) || 0;
+      const closeBtn = pane.querySelector('.pane-close-btn');
+      const closeRect = closeBtn ? closeBtn.getBoundingClientRect() : null;
+      if (closeRect && closeRect.width > 0) {
+        // × visible over the header: stop 6px short of its left edge.
+        const cellRight = cell.getBoundingClientRect().right - pad;
+        input.style.marginRight = Math.max(0, cellRight - closeRect.left + 6) + 'px';
+      } else {
+        // × hidden (single EMPTY pane): flush to the border, padding cancelled.
+        input.style.marginRight = (6 - pad) + 'px';
+      }
     });
 
     return input;
