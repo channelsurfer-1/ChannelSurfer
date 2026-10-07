@@ -44,6 +44,7 @@ A desktop app for browsing and watching live TV streams, with a modern program g
 - **Multi-view** – Watch up to four channels at once. The layout adjusts automatically.
 - **Automatic recovery** – If a stream stops working or freezes, ChannelSurfer switches to a backup source or restarts the stream for you.
 - **Built-in protection** – Blocks ads, trackers, malicious domains, and pop-up windows.
+- **Search filter** – Search for stations or programs by name.
 - **Dark interface** – Easy on the eyes in a dim room.
 
 ## Installation
@@ -77,9 +78,10 @@ Download the file for your system from the [Releases page](https://github.com/ch
 ## Getting Started
 
 1. **Launch the app.** The program guide loads and opens automatically.
-2. **Pick a program.** Click it to start watching.
-3. **Add more views.** Click **+** (top right) to watch another channel at the same time.
-4. **Close a view.** Click **×** on it. The other views keep playing and expand to fill the space. Closing the last view takes you back to the guide.
+2. **Optionally filter by station/program name.** Only matching entries will be displayed.
+3. **Pick a program.** Click it to start watching.
+4. **Add more views.** Click **+** (top right) to watch another channel at the same time.
+5. **Close a view.** Click **×** on it. The other views keep playing and expand to fill the space. Closing the last view takes you back to the guide.
 
 ### Using the program guide
 
