@@ -4,7 +4,7 @@ const { app } = require('electron');
 
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
 
-const { BrowserWindow, session, ipcMain, protocol, clipboard, webContents, screen, dialog } = require('electron');
+const { BrowserWindow, session, ipcMain, protocol, clipboard, webContents, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const debug = require('./src/debug');
@@ -98,14 +98,14 @@ const chainHosts = new Set();
 const shellHosts = new Set();
 let pendingPromotion = null;
 
-// Manual-confirm model (10-02): domains that pass a recovery test merge
-// into the ACTIVE config immediately (that is what playback uses, so the
-// connection keeps working and combinations can be tried freely) but are
-// NOT written to config-additions.json at test time. They accumulate here
-// and are written once, behind an explicit confirm dialog at quit. A
-// force-kill bypasses the dialog — the [CONFIG] "Pending quit-confirm"
-// log lines are the manual recovery path in that case.
-const sessionRecoveryPasses = new Set();
+// Write-on-pass model (10-10, restored): domains that pass a recovery test
+// are written to config-additions.json IMMEDIATELY, and the gist-ready
+// snapshot (documentation/latest-gist.json) is regenerated from
+// documentation/config.json + the local additions. The in-memory merge
+// into activeConfig is what keeps playback working; the 60s soak can still
+// roll the disk write back if the stream dies inside the window.
+// Post-restart soak failure has no rollback — manual gist/additions
+// cleanup (accepted).
 // Pane drag-swap (09-27): when the renderer arms a drag, the cursor poll
 // streams OS cursor points to it - the host renderer is blind over
 // webview guests, so the drag cannot be tracked with document events.
@@ -244,6 +244,51 @@ function saveAdditions(additions) {
     log('ERROR', 'Failed to write config additions: ' + err.message);
   }
 }
+
+// ---------- Gist-ready snapshot (10-10) ----------
+// Regenerate documentation/latest-gist.json = documentation/config.json
+// (the local mirror of the gist) with every local-only addition merged
+// into safeDomains. That file is what the maintainer pastes into the
+// gist; the app NEVER writes the gist itself. Idempotent; removes the
+// snapshot when no local-only domains remain (nothing to publish).
+// documentation/ does not ship in packaged builds, so the sync is dev-only.
+function syncLatestGist() {
+  if (app.isPackaged) {
+    if (debug.enabled) log('CONFIG', 'latest-gist sync skipped (packaged build)');
+    return;
+  }
+  try {
+    const srcPath = path.join(__dirname, 'documentation', 'config.json');
+    const outPath = path.join(__dirname, 'documentation', 'latest-gist.json');
+    let base = null;
+    try {
+      base = JSON.parse(fs.readFileSync(srcPath, 'utf8'));
+    } catch (_) {}
+    if (!base || !Array.isArray(base.safeDomains) || !Array.isArray(base.baseStreamUrls)) {
+      log('WARN', 'latest-gist sync skipped: documentation/config.json unreadable or malformed');
+      return;
+    }
+    const additions = loadAdditions().safeDomains;
+    const merged = Array.from(new Set([...base.safeDomains, ...additions]));
+    const same = merged.length === base.safeDomains.length &&
+      merged.every(d => base.safeDomains.includes(d));
+    if (same) {
+      if (fs.existsSync(outPath)) {
+        fs.unlinkSync(outPath);
+        log('CONFIG', 'latest-gist.json removed — no local-only domains remain');
+      }
+      return;
+    }
+    fs.writeFileSync(outPath, JSON.stringify({
+      baseStreamUrls: base.baseStreamUrls,
+      safeDomains: merged
+    }, null, 2), 'utf8');
+    log('CONFIG', 'latest-gist.json updated — local-only domain(s) to publish manually: ' + additions.join(', '));
+  } catch (err) {
+    log('ERROR', 'latest-gist sync failed: ' + err.message);
+  }
+}
+// ---------- End gist-ready snapshot ----------
 // ---------- End local config additions ----------
 
 function getSecurityLogPath() {
@@ -1446,24 +1491,24 @@ ipcMain.on('recovery-test-result', (event, payload) => {
   const domains = payload.domains.map(d => String(d).toLowerCase()).filter(Boolean);
   if (payload.passed === true) {
     if (pendingPromotion) clearTimeout(pendingPromotion.timer);
-    // Manual-confirm model (10-02): a pass NO LONGER writes the additions
-    // file. The domains merge into the active config in memory (the
-    // connection keeps working) and accumulate in sessionRecoveryPasses
-    // for the quit-time confirm. The 60s soak is unchanged background
-    // verification: recovery-soak-failed rolls the in-memory merge back
-    // if playback dies inside the window. The accumulated set is logged
-    // on every pass so a force-kill (which bypasses the quit dialog) is
-    // recoverable from terminal scrollback.
-    for (const d of domains) sessionRecoveryPasses.add(d);
+    // Write-on-pass model (10-10, restored): a pass writes the additions
+    // file immediately and regenerates the gist-ready snapshot; the
+    // in-memory merge keeps the connection working and the 60s soak is
+    // unchanged background verification — recovery-soak-failed rolls BOTH
+    // the in-memory merge and the disk write back if playback dies inside
+    // the window.
+    const additions = loadAdditions();
+    additions.safeDomains = Array.from(new Set([...additions.safeDomains, ...domains]));
+    saveAdditions(additions);
     activeConfig.safeDomains = Array.from(new Set([...activeConfig.safeDomains, ...domains]));
-    log('CONFIG', 'Recovery test passed; merged in-memory, NOT saved to disk: ' + domains.join(', '));
-    log('CONFIG', 'Pending quit-confirm: ' + Array.from(sessionRecoveryPasses).join(', '));
+    log('CONFIG', 'Recovery test passed; saved to config-additions.json: ' + domains.join(', '));
+    syncLatestGist();
     if (win && !win.isDestroyed()) {
       win.webContents.send('recovery-promoted', { domains });
     }
     pendingPromotion = { domains, timer: setTimeout(() => {
       pendingPromotion = null;
-      log('CONFIG', 'Soak stable after 60s (still pending quit-confirm): ' + domains.join(', '));
+      log('CONFIG', 'Soak stable after 60s; addition(s) kept: ' + domains.join(', '));
     }, 60000) };
   } else {
     if (pendingPromotion) {
@@ -1503,24 +1548,29 @@ ipcMain.on('recovery-test-result', (event, payload) => {
   }
 });
 
-// Rollback counterpart to the in-memory pass-merge: the renderer reports that the
+// Rollback counterpart to the write-on-pass merge: the renderer reports that the
 // recovered stream died inside the soak window, so the domains are removed
-// from the merged config, the runtime allow-set, and the quit-confirm set (nothing to roll back on disk).
+// from the merged config, the runtime allow-set, the additions file, and
+// the gist-ready snapshot (see syncLatestGist).
 ipcMain.on('recovery-soak-failed', (event, payload) => {
   if (!pendingPromotion || !payload || !Array.isArray(payload.domains)) return;
   const failed = payload.domains.map(d => String(d).toLowerCase()).filter(Boolean);
   if (failed.length === 0) return;
   if (pendingPromotion.timer) clearTimeout(pendingPromotion.timer);
   pendingPromotion = null;
-  // Manual-confirm model (10-02): nothing was written to disk on pass, so
-  // the rollback is in-memory only — drop the domains from the active
-  // config, the runtime allow-set, and the quit-confirm set.
+  // Write-on-pass model (10-10): the pass already wrote the additions file
+  // and the gist-ready snapshot, so the rollback has a disk leg too —
+  // remove the domains from the additions file and regenerate the
+  // snapshot (which removes the file itself when nothing local-only
+  // remains).
   const failedSet = new Set(failed);
   for (const d of failed) runtimeAllowedDomains.delete(d);
-  for (const d of failed) sessionRecoveryPasses.delete(d);
   activeConfig.safeDomains = activeConfig.safeDomains.filter(d => !failedSet.has(d));
-  log('CONFIG', 'Rolled back recovery addition(s) — playback failed during soak: ' + failed.join(', '));
-  log('CONFIG', 'Pending quit-confirm: ' + Array.from(sessionRecoveryPasses).join(', '));
+  const additions = loadAdditions();
+  additions.safeDomains = additions.safeDomains.filter(d => !failedSet.has(d));
+  saveAdditions(additions);
+  syncLatestGist();
+  log('CONFIG', 'Rolled back recovery addition(s) from memory AND disk — playback failed during soak: ' + failed.join(', '));
 });
 
 ipcMain.on('copy-text', (event, payload) => {
@@ -1687,44 +1737,9 @@ app.whenReady().then(async () => {
   let scheduleRetryTimer = null;
   let appQuitting = false;
 
-    app.on('before-quit', () => {
-    // Manual-confirm gate (10-02): if passed recovery domains accumulated
-    // this session, ask ONCE whether to write them to
-    // config-additions.json. Save = merged into the existing file (the
-    // gist is NEVER written — promoting additions there stays manual).
-    // Discard = dropped at quit. A force-kill bypasses this dialog; the
-    // [CONFIG] "Pending quit-confirm" log lines are the recovery path.
-    if (sessionRecoveryPasses.size > 0) {
-      const list = Array.from(sessionRecoveryPasses).join(', ');
-      let choice = 1;
-      try {
-        choice = dialog.showMessageBoxSync({
-          type: 'question',
-          buttons: ['Save additions', 'Discard'],
-          defaultId: 0,
-          cancelId: 1,
-          message: 'Save recovery domains to config-additions.json?',
-          detail: 'Passed and in use this session: ' + list +
-            '\n\nSave: written to config-additions.json (existing entries kept; the gist is never written).' +
-            '\nDiscard: dropped when the app quits.'
-        });
-      } catch (err) {
-        log('ERROR', 'Quit-confirm dialog failed; additions NOT saved: ' + err.message);
-        choice = 1;
-      }
-      if (choice === 0) {
-        try {
-          const additions = loadAdditions();
-          additions.safeDomains = Array.from(new Set([...additions.safeDomains, ...Array.from(sessionRecoveryPasses)]));
-          saveAdditions(additions);
-          log('CONFIG', 'Saved confirmed session addition(s): ' + list);
-        } catch (err) {
-          log('ERROR', 'Failed to save confirmed additions: ' + err.message);
-        }
-      } else {
-        log('CONFIG', 'Discarded session addition(s) at quit: ' + list);
-      }
-    }
+  app.on('before-quit', () => {
+    // Write-on-pass model (10-10): recovery additions were saved at test
+    // time; quit here is only the schedule-fetch teardown.
     appQuitting = true;
     if (scheduleRetryTimer) {
       clearTimeout(scheduleRetryTimer);
