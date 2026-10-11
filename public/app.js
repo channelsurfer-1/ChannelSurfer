@@ -728,7 +728,7 @@ function runStreamAttempt(attempt) {
   indicator.style.display = 'flex';
   indicator.style.alignItems = 'center';
   indicator.style.justifyContent = 'center';
-  indicator.style.fontSize = '1rem';
+  indicator.style.fontSize = '1.25rem'; // pairs with the centered "Loading schedule" status screen (10-11)
   indicator.style.zIndex = '100';
   // Status display only — never eat clicks. At z-100 this overlay used to
   // sit above the corner buttons (z-60), making × and the calendar dead
