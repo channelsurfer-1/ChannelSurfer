@@ -280,7 +280,7 @@ function syncLatestGist() {
       return;
     }
     fs.writeFileSync(outPath, JSON.stringify({
-      ...base,          // preserve every gist key (version/updated/embedHost/…)
+      ...base,             // preserve every gist key verbatim (never drop fields the app doesn't read)
       safeDomains: merged  // overridden: mirror domains + local-only additions
     }, null, 2), 'utf8');
     log('CONFIG', 'latest-gist.json updated — local-only domain(s) to publish manually: ' + additions.join(', '));
