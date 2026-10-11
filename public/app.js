@@ -1204,9 +1204,9 @@ function updateGuideStatusScreen() {
   el.textContent = '';
   const label = document.createElement('span');
   if (unavailableMs >= GUIDE_ERROR_THRESHOLD_MS) {
-    label.textContent = 'Unable to load program guide...';
+    label.textContent = 'Unable to load schedule...';
   } else {
-    label.textContent = 'Loading the program guide';
+    label.textContent = 'Loading schedule';
     label.appendChild(makeConnectingDots());
 
     const remaining = GUIDE_ERROR_THRESHOLD_MS - unavailableMs;
@@ -1517,17 +1517,17 @@ function populateScheduleList(listContainer, pane, paneIndex) {
         msgRow.style.cssText = 'color:#999;font-size:13px;padding:14px 12px;';
         const unavailableMs = guideUnavailableSince ? Date.now() - guideUnavailableSince : 0;
         if (unavailableMs >= GUIDE_ERROR_THRESHOLD_MS) {
-            msgRow.textContent = "Can't load program guide.";
+            msgRow.textContent = "Can't load schedule.";
         } else {
             const labelSpan = document.createElement('span');
-            labelSpan.textContent = 'Loading the program guide';
+            labelSpan.textContent = 'Loading schedule';
             labelSpan.appendChild(makeConnectingDots());
             msgRow.appendChild(labelSpan);
             const remaining = GUIDE_ERROR_THRESHOLD_MS - unavailableMs;
             if (remaining > 0) {
                 setTimeout(() => {
                     if (msgRow.isConnected && !scheduleData) {
-                        msgRow.textContent = "Can't load program guide.";
+                        msgRow.textContent = "Can't load schedule.";
                     }
                 }, remaining);
             }
@@ -1954,7 +1954,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const themeBg = bodyStyle.backgroundColor !== 'rgba(0, 0, 0, 0)'
     ? bodyStyle.backgroundColor
     : getComputedStyle(document.documentElement).backgroundColor;
-  statusScreen.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:1rem;z-index:1000;background:' + themeBg + ';color:' + bodyStyle.color + ';';
+  statusScreen.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:1.25rem;z-index:1000;background:' + themeBg + ';color:' + bodyStyle.color + ';';
   document.body.appendChild(statusScreen);
   guideStatusShownAt = Date.now();
   updateGuideStatusScreen();
