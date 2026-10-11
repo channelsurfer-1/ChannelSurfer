@@ -123,7 +123,7 @@ function log(category, message) {
 // ---------- End logging ----------
 
 // ---------- Remote config ----------
-const CONFIG_URL = 'https://gist.githubusercontent.com/channelsurfer-1/cf46021791c0140d8321675b2fcead7b/raw/config.json';
+const CONFIG_URL = 'https://gist.githubusercontent.com/channelsurfer-1/575c8277aa05ae0fbaea0c008b18cb58/raw/config.json';
 const CONFIG_FETCH_TIMEOUT_MS = 5000;
 
 const BASELINE_CONFIG = {
@@ -280,8 +280,8 @@ function syncLatestGist() {
       return;
     }
     fs.writeFileSync(outPath, JSON.stringify({
-      baseStreamUrls: base.baseStreamUrls,
-      safeDomains: merged
+      ...base,          // preserve every gist key (version/updated/embedHost/…)
+      safeDomains: merged  // overridden: mirror domains + local-only additions
     }, null, 2), 'utf8');
     log('CONFIG', 'latest-gist.json updated — local-only domain(s) to publish manually: ' + additions.join(', '));
   } catch (err) {
