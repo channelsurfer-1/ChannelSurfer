@@ -1831,6 +1831,10 @@ document.addEventListener('DOMContentLoaded', () => {
   function refreshOpenOverlay() {
     const openOverlay = document.querySelector('.view-pane .pane-schedule-overlay');
     if (!openOverlay) return;
+    // Tooltip teardown (10-04 pattern): the rebuild below empties the list
+    // with innerHTML = '', which detaches the hovered row without firing
+    // mouseleave — the balloon would float until the next real mouse move.
+    hideTooltip();
 
     const pane = openOverlay.parentElement;
     if (!pane) return;
