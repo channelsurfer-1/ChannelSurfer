@@ -1856,9 +1856,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (window.channelSurfer) {
+    // Remote-first: only a path main already generated (it beat us to it)
+    // loads immediately. '' means the fresh download is still in flight —
+    // wait for schedule-ready instead of showing a same-day-but-old local file.
     window.channelSurfer.invoke('get-schedule-path').then((p) => {
-      if (p) schedulePath = p;
-      loadSchedule();
+      if (p) {
+        schedulePath = p;
+        loadSchedule();
+      }
     });
     window.channelSurfer.invoke('get-stream-base-urls').then((urls) => {
       if (Array.isArray(urls) && urls.length > 0) {
@@ -1930,13 +1935,21 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
+    // Remote is authoritative: every fresh generation replaces whatever
+    // is on screen — including a local fallback loaded during an outage.
     window.channelSurfer.onScheduleReady((payload) => {
       if (payload && typeof payload.path === 'string' && payload.path) {
         schedulePath = payload.path;
-        if (!scheduleData || !isScheduleFresh(scheduleData)) {
-          loadSchedule();
-        }
+        loadSchedule();
       }
+    });
+
+    // Remote-first fallback: main declared the remote unreachable after
+    // bounded retries. Resort to the local file; the same-day freshness
+    // gate inside loadSchedule still applies — a fallback, not a loophole.
+    window.channelSurfer.onScheduleUnavailable(() => {
+      if (scheduleData) return; // fresh data already on screen
+      loadSchedule();
     });
 
     window.channelSurfer.onRecoveryPromoted((payload) => {

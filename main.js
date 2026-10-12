@@ -1751,11 +1751,26 @@ app.whenReady().then(async () => {
     } catch (_) {}
   });
 
+  // Remote-first schedule policy: bounded retries, then declare the
+  // remote unavailable so the renderer can resort to its local file.
+  // Retries continue afterward — a late recovery still delivers a fresh
+  // file, and schedule-ready re-wins over any fallback on screen.
+  const SCHEDULE_MAX_ATTEMPTS = 20; // 15s cadence -> ~5 minutes
   (async () => {
     const retryDelayMs = 15000;
+    let failures = 0;
+    let declaredUnavailable = false;
     while (!appQuitting) {
       const generated = await generateSchedule();
       if (generated || appQuitting) break;
+      failures++;
+      if (!declaredUnavailable && failures >= SCHEDULE_MAX_ATTEMPTS) {
+        declaredUnavailable = true;
+        log('WARN', 'Schedule remote unavailable after ' + failures + ' failed attempts; declaring schedule-unavailable');
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('schedule-unavailable', {});
+        }
+      }
       log('WARN', `Schedule unavailable; retrying in ${retryDelayMs / 1000}s`);
       await new Promise(resolve => {
         scheduleRetryTimer = setTimeout(() => {

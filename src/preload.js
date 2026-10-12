@@ -29,5 +29,8 @@ contextBridge.exposeInMainWorld('channelSurfer', {
   },
   onScheduleReady(handler) {
     ipcRenderer.on('schedule-ready', (event, payload) => handler(payload));
+  },
+  onScheduleUnavailable(handler) {
+    ipcRenderer.on('schedule-unavailable', (event, payload) => handler(payload));
   }
 });
