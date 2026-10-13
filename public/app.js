@@ -100,6 +100,41 @@ function isDebug() {
   return debugMode;
 }
 
+// Bar-beneathe-pane beacon (sec.6.10): samples each pane's bottom strip, logs on change. Debug mode only.
+let chromeWatchLast = null;
+function chromeWatchSample() {
+  if (!isDebug() || document.hidden) return;
+  const parts = [];
+  document.querySelectorAll('.view-pane').forEach(p => {
+    const r = p.getBoundingClientRect();
+    if (r.width < 10 || r.height < 10) return;
+    const x = Math.round(r.left + r.width / 2);
+    const names = [12, 34].map(off => {
+      const el = document.elementFromPoint(x, Math.round(r.bottom - off));
+      if (!el) return 'null';
+      const cls = typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\s+/).join('.') : '';
+      return el.tagName.toLowerCase() + cls;
+    });
+    parts.push('p' + p.getAttribute('data-pane') + '=' + names.join('/'));
+  });
+  const sig = parts.join(' ');
+  if (sig === chromeWatchLast) return;
+  const prev = chromeWatchLast;
+  chromeWatchLast = sig;
+  const t = new Date().toTimeString().slice(0, 8);
+  const streams = (typeof panePrograms !== 'undefined') ? panePrograms.filter(Boolean).length : -1;
+  const guide = (typeof openOverlay !== 'undefined' && openOverlay) ? 'open' : 'closed';
+  const ctx = 'panes:' + (typeof paneCount !== 'undefined' ? paneCount : '?') + ' guide:' + guide + ' streams:' + streams;
+  logToMain('[CHROME] ' + t + (prev === null ? ' baseline ' + sig + ' ' + ctx : ' change ' + prev + ' -> ' + sig + ' ' + ctx));
+}
+function startChromeWatch() {
+  logToMain('[CHROME] pane-bottom beacon active (5s sampling)');
+  chromeWatchLast = null;
+  chromeWatchSample();
+  setInterval(chromeWatchSample, 5000);
+}
+
+
 // ---------- Control-pulse bounds broadcast ----------
 // The host renderer does not see mousemove over a loaded <webview> guest.
 // Main polls the OS cursor instead; this function feeds it the viewport-space
@@ -1875,6 +1910,7 @@ document.addEventListener('DOMContentLoaded', () => {
       debugMode = flag === true;
       if (debugMode) {
         logToMain('[DEBUG] renderer debug mode active');
+        startChromeWatch();
       }
     }).catch(() => {});
 
