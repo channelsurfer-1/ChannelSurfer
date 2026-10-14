@@ -117,6 +117,11 @@ function chromeWatchSample() {
     });
     parts.push('p' + p.getAttribute('data-pane') + '=' + names.join('/'));
   });
+  [0.25, 0.75].forEach(f => {
+    const wEl = document.elementFromPoint(Math.round(window.innerWidth * f), window.innerHeight - 8);
+    const wCls = wEl && typeof wEl.className === 'string' && wEl.className ? '.' + wEl.className.trim().split(/\s+/).join('.') : '';
+    parts.push('w' + f + '=' + (wEl ? wEl.tagName.toLowerCase() + wCls : 'null'));
+  });
   const sig = parts.join(' ');
   if (sig === chromeWatchLast) return;
   const prev = chromeWatchLast;
