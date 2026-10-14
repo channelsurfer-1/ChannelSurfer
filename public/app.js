@@ -338,7 +338,7 @@ function closePane(index) {
   // bump); the closed div parks at the freed top number. No re-streams.
   allPanes().forEach((p) => {
     const slot = Number(p.dataset.pane);
-    if (slot > index) p.dataset.pane = String(slot - 1);
+    if (slot > index && slot <= paneCount) p.dataset.pane = String(slot - 1);
   });
   pane.dataset.pane = String(paneCount);
 
