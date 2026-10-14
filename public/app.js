@@ -115,12 +115,20 @@ function chromeWatchSample() {
       const cls = typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\s+/).join('.') : '';
       return el.tagName.toLowerCase() + cls;
     });
+    [6, 14].forEach(off => {
+      const bEl = document.elementFromPoint(x, Math.round(r.bottom + off));
+      if (!bEl) { names.push('null'); return; }
+      const bCls = typeof bEl.className === 'string' && bEl.className ? '.' + bEl.className.trim().split(/\s+/).join('.') : '';
+      names.push(bEl.tagName.toLowerCase() + bCls + '@' + Math.round(bEl.getBoundingClientRect().height));
+    });
     parts.push('p' + p.getAttribute('data-pane') + '=' + names.join('/'));
   });
   [0.25, 0.75].forEach(f => {
-    const wEl = document.elementFromPoint(Math.round(window.innerWidth * f), window.innerHeight - 8);
-    const wCls = wEl && typeof wEl.className === 'string' && wEl.className ? '.' + wEl.className.trim().split(/\s+/).join('.') : '';
-    parts.push('w' + f + '=' + (wEl ? wEl.tagName.toLowerCase() + wCls : 'null'));
+    [6, 14, 22].forEach(off => {
+      const wEl = document.elementFromPoint(Math.round(window.innerWidth * f), window.innerHeight - off);
+      const wCls = wEl && typeof wEl.className === 'string' && wEl.className ? '.' + wEl.className.trim().split(/\s+/).join('.') : '';
+      parts.push('w' + f + '-' + off + '=' + (wEl ? wEl.tagName.toLowerCase() + wCls + '@' + Math.round(wEl.getBoundingClientRect().height) : 'null'));
+    });
   });
   const sig = parts.join(' ');
   if (sig === chromeWatchLast) return;
