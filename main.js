@@ -1432,6 +1432,7 @@ function createWindow() {
     win.show();
   });
 
+  if (process.env.CHANNELSURFER_DEBUG === '1' || process.argv.includes('--debug')) win.webContents.openDevTools({ mode: 'detach' });
   win.loadFile(targetPath).catch(err => {
     log('ERROR', 'Failed to load HTML file: ' + err.message);
   });
