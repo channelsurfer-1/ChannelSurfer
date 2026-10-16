@@ -1606,6 +1606,7 @@ ipcMain.on('unregister-stream-attempt', (event, payload) => {
 
 ipcMain.on('renderer-log', (event, message) => {
   if (typeof message === 'string') {
+    if (message.includes('screen-wake-lock')) return; // site-side probe spam (known issue §7.9)
     log('RENDER', message);
   }
 });
