@@ -48,7 +48,7 @@ npx electron-packager . ChannelSurfer \
   --arch=x64 \
   --out=dist \
   --overwrite \
-  --icon=images/ChannelSurfer.png \
+  --icon=images/icon-32.png \
   "${IGNORE_PATTERNS[@]}"
 
 # Package the output as a tar.gz for distribution
