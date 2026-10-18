@@ -93,6 +93,12 @@ function startHealthPoll() {
 
 const blockedDomainRefs = new Map();
 const runtimeAllowedDomains = new Set();
+// Probe support (10-17): successful media-segment (.ts/.zst/.m4s) 2xx count
+// per tracked stream webview. Inert in the app — nothing reads it there.
+// The probe uses it as its connect-success signal: a 200 manifest alone is
+// not proof of playback (10-16 buffer-loop class: 200s after 20s, zero
+// segment traffic).
+const segmentHits = new Map();
 let knownPassengers = new Set();
 const chainHosts = new Set();
 const shellHosts = new Set();
@@ -214,6 +220,36 @@ async function loadConfig() {
   return BASELINE_CONFIG;
 }
 // ---------- End remote config ----------
+
+// Pure dedup union of two safeDomains lists. Shared by the boot merge and
+// the probe (extracted 10-17 so both sides use identical policy).
+function mergeSafeDomains(base, additions) {
+  return Array.from(new Set([...(base || []), ...(additions || [])]));
+}
+
+// Probe-only (10-17): the probe assigns the merged gist+additions config
+// through this instead of the boot block (which it skips). App never calls.
+function setActiveConfig(config) {
+  activeConfig = config;
+}
+
+// Probe-only (10-17): wipe every piece of recovery/candidate state so a
+// fresh trial starts clean. The 09-27 lesson: a stale allow-set or a stale
+// passenger hides the real chain answer from the next test. shellHosts is
+// re-seeded from the active config's shell URLs. The app never calls this.
+function resetRecoveryState() {
+  blockedDomainRefs.clear();
+  runtimeAllowedDomains.clear();
+  knownPassengers = new Set();
+  chainHosts.clear();
+  streamPlayerDomains.clear();
+  blockedDomainsLogged.clear();
+  segmentHits.clear();
+  shellHosts.clear();
+  for (const u of activeConfig.baseStreamUrls) {
+    try { shellHosts.add(new URL(u).hostname.toLowerCase()); } catch (_) {}
+  }
+}
 
 // ---------- Local config additions ----------
 function getAdditionsPath() {
@@ -1237,31 +1273,15 @@ function scheduleHalfHourRegeneration() {
   }, delay);
 }
 
-function createWindow() {
-  if (windowCreated) return;
-  windowCreated = true;
-
-  win = new BrowserWindow({
-    title: '📺 ChannelSurfer',
-    width: 1200,
-    height: 800,
-    show: false,
-    backgroundColor: '#1a1a1a',
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(__dirname, 'src', 'preload.js'),
-      webSecurity: false,
-      allowRunningInsecureContent: false,
-      webviewTag: true
-    }
-  });
-
-  const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36';
-  win.webContents.setUserAgent(USER_AGENT);
-
-  session.defaultSession.clearCache().catch(() => {});
-
+// ---------- Request pipeline (extracted 10-17) ----------
+// Installs the default-deny blocker, curl-parity header rebuild, CORS
+// normalizer, and the m3u8 completion hooks on the default session. Pure
+// move out of createWindow so the probe (probe-main.js) can install the
+// identical pipeline without a window. The onCompleted handler's app-side
+// hooks (curtain, warm-up, click probe, stream-attempt-success) are all
+// no-op-safe for a probe guest: win is null-checked and the probe never
+// sets pane audio focus.
+function installRequestHandlers() {
   session.defaultSession.webRequest.onBeforeRequest(
     { urls: ['http://*/*', 'https://*/*'] },
     (details, callback) => {
@@ -1390,6 +1410,15 @@ function createWindow() {
             log('RESP', `${String(details.statusCode).padEnd(4)} ${(details.resourceType || '').padEnd(8)} ${truncateUrl(details.url, 130)}`);
           }
         }
+        // Probe support (10-17): count successful media segments per tracked
+        // stream. Inert in the app (nothing reads segmentHits there); the
+        // probe uses >= N hits as its connect-success signal — a 200
+        // manifest alone is not proof of playback (10-16 buffer-loop class).
+        if (trackedStreamWebviews.has(details.webContentsId) &&
+            (details.url.includes('.ts') || details.url.includes('.zst') || details.url.includes('.m4s')) &&
+            details.statusCode >= 200 && details.statusCode < 300) {
+          segmentHits.set(details.webContentsId, (segmentHits.get(details.webContentsId) || 0) + 1);
+        }
         if (!details.url.includes('.m3u8')) return;
         if (!trackedStreamWebviews.has(details.webContentsId)) return;
         if (details.statusCode >= 400) return;
@@ -1427,6 +1456,36 @@ function createWindow() {
     }
   );
   
+}
+// ---------- End request pipeline ----------
+
+function createWindow() {
+  if (windowCreated) return;
+  windowCreated = true;
+
+  win = new BrowserWindow({
+    title: '📺 ChannelSurfer',
+    width: 1200,
+    height: 800,
+    show: false,
+    backgroundColor: '#1a1a1a',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'src', 'preload.js'),
+      webSecurity: false,
+      allowRunningInsecureContent: false,
+      webviewTag: true
+    }
+  });
+
+  const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36';
+  win.webContents.setUserAgent(USER_AGENT);
+
+  session.defaultSession.clearCache().catch(() => {});
+
+  installRequestHandlers();
+
   const targetPath = path.join(__dirname, 'public', 'index.html');
 
   win.once('ready-to-show', () => {
@@ -1452,10 +1511,11 @@ ipcMain.handle('get-debug-mode', () => {
   return debug.enabled;
 });
 
-ipcMain.handle('get-recovery-candidates', () => {
-  if (!debug.enabled) {
-    return { enabled: false, candidates: [] };
-  }
+// Candidate filter shared by the recovery dialog IPC handler, the
+// solo-guard in recovery-test-result, and the probe (extracted 10-17; the
+// logic was duplicated verbatim in two places — this is the §6 item 7
+// dedup). Returns the FULL sorted list; consumers slice as they need.
+function computeRecoveryCandidates() {
   const out = [];
   for (const [domain, info] of blockedDomainRefs) {
     if (Date.now() - info.lastSeenMs > 10 * 60 * 1000) continue;
@@ -1470,7 +1530,14 @@ ipcMain.handle('get-recovery-candidates', () => {
     out.push({ domain, refHost: info.refHost, count: info.count, tag, checked: viaChainRef && strong });
   }
   out.sort((a, b) => b.count - a.count);
-  return { enabled: true, candidates: out.slice(0, 6) };
+  return out;
+}
+
+ipcMain.handle('get-recovery-candidates', () => {
+  if (!debug.enabled) {
+    return { enabled: false, candidates: [] };
+  }
+  return { enabled: true, candidates: computeRecoveryCandidates().slice(0, 6) };
 });
 
 ipcMain.on('allow-recovery-domains', (event, payload) => {
@@ -1528,16 +1595,11 @@ ipcMain.on('recovery-test-result', (event, payload) => {
       // when no other unallowed candidate is left — the solo failure is
       // then meaningful because there is nothing left to combine with.
       const failed = domains[0];
+      // Shared filter (extracted 10-17): identical five-condition logic to
+      // get-recovery-candidates, minus the `failed` domain itself.
       let otherUnknowns = 0;
-      for (const [domain, info] of blockedDomainRefs) {
-        if (domain === failed) continue;
-        if (Date.now() - info.lastSeenMs > 10 * 60 * 1000) continue;
-        if (knownPassengers.has(domain)) continue;
-        if (runtimeAllowedDomains.has(domain)) continue;
-        if (activeConfig.safeDomains.some(d => domain === d || domain.endsWith('.' + d))) continue;
-        const viaChainRef = chainHosts.has(info.refHost);
-        const chainContext = viaChainRef || (info.subFrame && shellHosts.has(info.refHost));
-        if (!chainContext) continue;
+      for (const c of computeRecoveryCandidates()) {
+        if (c.domain === failed) continue;
         otherUnknowns++;
       }
       if (otherUnknowns === 0) {
@@ -1669,6 +1731,13 @@ app.on('web-contents-created', (event, contents) => {
   }
 });
 
+// Boot guard (10-17): probe-main.js (`npm run probe`) sets
+// CHANNELSURFER_PROBE=1 before requiring this module; every other launch
+// (npm start, packaged builds) boots normally. NOTE: require.main is
+// unusable here — Electron sets it to the electron binary shim, not the
+// entry module (verified live 10-17), and process.defaultApp is true for
+// both app and probe, so neither discriminates.
+if (process.env.CHANNELSURFER_PROBE !== '1') {
 app.whenReady().then(async () => {
   session.defaultSession.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36');
 
@@ -1689,7 +1758,7 @@ app.whenReady().then(async () => {
     log('CONFIG', 'Pruned local addition(s) already in gist config: ' + pruned.join(', '));
   }
   if (additions.safeDomains.length > 0) {
-    activeConfig.safeDomains = Array.from(new Set([...activeConfig.safeDomains, ...additions.safeDomains]));
+    activeConfig.safeDomains = mergeSafeDomains(activeConfig.safeDomains, additions.safeDomains);
   }
     if ((additions.pending || []).length > 0) {
     // Manual-confirm model (10-02): test-passes no longer write the
@@ -1796,3 +1865,26 @@ app.on('activate', () => {
     createWindow();
   }
 });
+}
+
+// ---------- Probe seam (10-17) ----------
+// The probe (probe-main.js, `npm run probe`) requires this module to reuse
+// the network machinery without booting the app: it sets
+// CHANNELSURFER_PROBE=1 before the require, which skips the boot block
+// above, while everything top-level still applies (command-line switches
+// incl. the UA, the web-contents-created handler with the JW kick and
+// popup deny, all IPC registrations). Normal launch (`npm start`,
+// packaged builds) never sets the variable and boots exactly as before.
+module.exports = {
+  installRequestHandlers,
+  computeRecoveryCandidates,
+  loadConfig,
+  loadAdditions,
+  mergeSafeDomains,
+  setActiveConfig,
+  resetRecoveryState,
+  isStreamingContent,
+  runtimeAllowedDomains,
+  trackedStreamWebviews,
+  segmentHits
+};
