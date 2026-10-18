@@ -1876,6 +1876,7 @@ app.on('activate', () => {
 // popup deny, all IPC registrations). Normal launch (`npm start`,
 // packaged builds) never sets the variable and boots exactly as before.
 module.exports = {
+  findPlayerFrame,
   installRequestHandlers,
   computeRecoveryCandidates,
   loadConfig,
