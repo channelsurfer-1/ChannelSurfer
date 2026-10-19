@@ -5,6 +5,7 @@
   "scripts": {
     "start": "electron .",
     "probe": "electron probe-main.js",
+    "setup": "electron setup-main.js",
     "package": "bash scripts/build-mac.sh",
     "package:win": "bash scripts/build-win.sh",
     "package:linux": "bash scripts/build-linux.sh",
