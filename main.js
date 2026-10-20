@@ -1533,6 +1533,26 @@ function computeRecoveryCandidates() {
   return out;
 }
 
+// Write-on-pass commit, SHARED (10-20) by the recovery dialog
+// (recovery-test-result) and auto-add: additions file + activeConfig merge +
+// gist snapshot + 60s soak with recovery-soak-failed rollback.
+function commitRecoveryDomains(domains) {
+  if (pendingPromotion) clearTimeout(pendingPromotion.timer);
+  const additions = loadAdditions();
+  additions.safeDomains = Array.from(new Set([...additions.safeDomains, ...domains]));
+  saveAdditions(additions);
+  activeConfig.safeDomains = Array.from(new Set([...activeConfig.safeDomains, ...domains]));
+  log('CONFIG', 'Recovery test passed; saved to config-additions.json: ' + domains.join(', '));
+  syncLatestGist();
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('recovery-promoted', { domains });
+  }
+  pendingPromotion = { domains, timer: setTimeout(() => {
+    pendingPromotion = null;
+    log('CONFIG', 'Soak stable after 60s; addition(s) kept: ' + domains.join(', '));
+  }, 60000) };
+}
+
 ipcMain.handle('get-recovery-candidates', () => {
   if (!debug.enabled) {
     return { enabled: false, candidates: [] };
@@ -1559,26 +1579,7 @@ ipcMain.on('recovery-test-result', (event, payload) => {
   if (!payload || !Array.isArray(payload.domains)) return;
   const domains = payload.domains.map(d => String(d).toLowerCase()).filter(Boolean);
   if (payload.passed === true) {
-    if (pendingPromotion) clearTimeout(pendingPromotion.timer);
-    // Write-on-pass model (10-10, restored): a pass writes the additions
-    // file immediately and regenerates the gist-ready snapshot; the
-    // in-memory merge keeps the connection working and the 60s soak is
-    // unchanged background verification — recovery-soak-failed rolls BOTH
-    // the in-memory merge and the disk write back if playback dies inside
-    // the window.
-    const additions = loadAdditions();
-    additions.safeDomains = Array.from(new Set([...additions.safeDomains, ...domains]));
-    saveAdditions(additions);
-    activeConfig.safeDomains = Array.from(new Set([...activeConfig.safeDomains, ...domains]));
-    log('CONFIG', 'Recovery test passed; saved to config-additions.json: ' + domains.join(', '));
-    syncLatestGist();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('recovery-promoted', { domains });
-    }
-    pendingPromotion = { domains, timer: setTimeout(() => {
-      pendingPromotion = null;
-      log('CONFIG', 'Soak stable after 60s; addition(s) kept: ' + domains.join(', '));
-    }, 60000) };
+    commitRecoveryDomains(domains);
   } else {
     if (pendingPromotion) {
       clearTimeout(pendingPromotion.timer);
@@ -1875,6 +1876,31 @@ app.on('activate', () => {
 // incl. the UA, the web-contents-created handler with the JW kick and
 // popup deny, all IPC registrations). Normal launch (`npm start`,
 // packaged builds) never sets the variable and boots exactly as before.
+const autoadd = require('./src/autoadd');
+
+autoadd.init({
+  log,
+  debugEnabled: () => debug.enabled,
+  getWin: () => win,
+  getActiveConfig: () => activeConfig,
+  commitRecoveryDomains,
+  computeRecoveryCandidates,
+  resetRecoveryState,
+  findPlayerFrame,
+  runtimeAllowedDomains,
+  trackedStreamWebviews,
+  segmentHits
+});
+
+// Auto-add trigger (10-20): the renderer reports a genuinely exhausted
+// failover cycle. Skipped under the probe/setup env protocol and when the
+// window is gone. The lock and cooldown live in autoadd.
+ipcMain.on('failover-exhausted', (event, payload) => {
+  if (process.env.CHANNELSURFER_PROBE === '1') return;
+  if (!payload || typeof payload.dlhdId !== 'string' || !payload.dlhdId) return;
+  autoadd.run(payload.dlhdId);
+});
+
 module.exports = {
   findPlayerFrame,
   installRequestHandlers,

@@ -953,6 +953,14 @@ function failStreamAttempt(attempt) {
     pendingPromotionView = null;
   }
 
+  // Auto-add trigger (10-20): the failover cycle is genuinely exhausted.
+  // Skipped while a manual recovery test/promotion is pending on this pane
+  // so auto-add never fights the debug dialog's own test cycle.
+  if ((!pendingRecoveryTest || pendingRecoveryTest.pane !== attempt.pane) &&
+      (!pendingPromotionView || pendingPromotionView.pane !== attempt.pane)) {
+    sendIpc('failover-exhausted', { dlhdId: attempt.dlhdId });
+  }
+
   if (isDebug()) {
     openRecoveryDialog(attempt);
   }
@@ -2000,6 +2008,31 @@ document.addEventListener('DOMContentLoaded', () => {
       if (scheduleData) return; // fresh data already on screen
       loadSchedule();
     });
+
+    // Auto-add recovery (10-20): main fixed the pool (or the failure was
+    // transient) — re-stream a failed pane still showing this channel.
+    // Silent: no overlay. When domains were committed, arm the soak token so
+    // a failure inside the window rolls the addition back (same mechanism
+    // as the manual dialog path).
+    if (window.channelSurfer.onAutoaddRecovered) {
+      window.channelSurfer.onAutoaddRecovered((payload) => {
+        if (!payload || typeof payload.dlhdId !== 'string') return;
+        for (const pane of allPanes()) {
+          if (streamAttempts.has(pane)) continue;          // mid-attempt
+          if (pane.querySelector('webview')) continue;     // already playing
+          const slot = paneIndexOf(pane);
+          if (slot === -1 || slot >= paneCount) continue;
+          const program = panePrograms[slot];
+          if (!program || String(program.dlhdId) !== payload.dlhdId) continue;
+          if (payload.domains && payload.domains.length > 0) {
+            pendingPromotionView = { pane: pane, domains: payload.domains };
+          }
+          logToMain('[AUTOADD] re-streaming pane ' + (slot + 1) + ' (' + program.stationName + ')');
+          attemptStream(pane, slot, program.stationName, program.dlhdId, program.programName);
+          break; // one pane per channel is enough
+        }
+      });
+    }
 
     window.channelSurfer.onRecoveryPromoted((payload) => {
       if (!payload || !Array.isArray(payload.domains)) return;
