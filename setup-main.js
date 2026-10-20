@@ -278,6 +278,16 @@ app.whenReady().then(async () => {
   const config = await main.loadConfig();
   const additions = main.loadAdditions();
   initialDomains = main.mergeSafeDomains(config.safeDomains, additions.safeDomains);
+  // Prune-audit support (10-20): --exclude=a,b,c drops domains from the
+  // initial pool so a healthy-day run can test whether they're load-bearing
+  // (§6 item 9 evidence-gate, bulk form).
+  const excludeArg = argVal('exclude', null);
+  const excludeSet = new Set(excludeArg ? excludeArg.split(',').map(d => d.trim().toLowerCase()).filter(Boolean) : []);
+  if (excludeSet.size > 0) {
+    const before = initialDomains.length;
+    initialDomains = initialDomains.filter(d => !excludeSet.has(d));
+    setupLog('audit', 'excluded ' + (before - initialDomains.length) + ' domain(s), pool ' + before + ' -> ' + initialDomains.length + ': ' + initialDomains.join(', '));
+  }
   main.setActiveConfig({ ...config, safeDomains: initialDomains.slice() });
   main.installRequestHandlers();
   main.resetRecoveryState();
