@@ -400,6 +400,17 @@ app.whenReady().then(async () => {
     baseStreamUrls: bases
   });
 
+  // Authority flip (16b): the setup driver is the master's producer.
+  // Writing userData/config.json is THE EXCEPTION to the probe-family
+  // read-only-userData discipline — initializing the install's config is
+  // this tool's whole purpose. Atomic write, same as the checkpoint.
+  const masterPath = path.join(app.getPath('userData'), 'config.json');
+  writeJsonAtomic(masterPath, {
+    safeDomains: finalPool,
+    baseStreamUrls: bases
+  });
+  setupLog('master', 'wrote local master ' + masterPath + ' (' + finalPool.length + ' domains)');
+
   const done = Object.keys(checkpoint.stations).length;
   console.log('[SETUP ] ---- summary ----');
   console.log(`[SETUP ] stations tested: ${done} (OK=${counts.OK || 0} RECOVERED=${counts.RECOVERED || 0} DEAD=${counts.DEAD || 0})${earlyStopped ? ' [PARTIAL: early-stop]' : ''}`);

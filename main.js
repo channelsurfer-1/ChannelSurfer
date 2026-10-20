@@ -197,23 +197,30 @@ function writeCachedConfig(config) {
 }
 
 async function loadConfig() {
+  // Authority flip (16b, 10-20): the LOCAL master wins. The gist is
+  // demoted to a bootstrap seed — fetched only when no local master
+  // exists (fresh install, or a deliberately deleted master), then
+  // written as the master. Existing installs go local instantly,
+  // including stale entries the gist no longer carries: dead weight is
+  // harmless and is auto-prune's job (16c). To reseed from the current
+  // gist, delete userData/config.json once.
+  const cached = readCachedConfig();
+  if (cached) {
+    log('CONFIG', 'Loaded from local master');
+    return cached;
+  }
+
   try {
     const remote = await fetchWithTimeout(CONFIG_URL, CONFIG_FETCH_TIMEOUT_MS);
     const validated = validateConfig(remote);
     if (validated) {
-      log('CONFIG', 'Loaded from remote');
+      log('CONFIG', 'No local master — seeding from remote gist');
       writeCachedConfig(validated);
       return validated;
     }
     log('WARN', 'Remote config payload invalid, ignoring');
   } catch (err) {
     log('WARN', 'Remote config fetch failed: ' + err.message);
-  }
-
-  const cached = readCachedConfig();
-  if (cached) {
-    log('CONFIG', 'Loaded from cache');
-    return cached;
   }
 
   log('CONFIG', 'Using hardcoded baseline');
